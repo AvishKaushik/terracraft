@@ -10,7 +10,7 @@
     "dev": "vite",
     "server": "node server.cjs",
     "start": "NODE_ENV=production node server.cjs",
-    "build": "npx tsc -b && npx vite build",
+    "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
