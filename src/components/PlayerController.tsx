@@ -306,9 +306,10 @@ export function PlayerController({ particlesRef }: Props) {
 
     // FOV — lerp toward target based on movement state
     const targetFov = flying ? 83 : (sprint && mvLen > 0 && !inWater) ? 78 : 70;
-    if (Math.abs(camera.fov - targetFov) > 0.05) {
-      camera.fov += (targetFov - camera.fov) * Math.min(1, 8 * dt);
-      camera.updateProjectionMatrix();
+    const pcam = camera as THREE.PerspectiveCamera;
+    if (Math.abs(pcam.fov - targetFov) > 0.05) {
+      pcam.fov += (targetFov - pcam.fov) * Math.min(1, 8 * dt);
+      pcam.updateProjectionMatrix();
     }
 
     // --- Sync stores (cheap, only pos array reference changes) ---
