@@ -8,7 +8,7 @@ export function HotbarToast() {
   const started     = useGameStore(s => s.started);
   const [label, setLabel]   = useState('');
   const [visible, setVisible] = useState(false);
-  const timerRef  = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef  = useRef<ReturnType<typeof setTimeout>>(undefined);
   const firstRender = useRef(true);
 
   useEffect(() => {

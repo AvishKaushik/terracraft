@@ -19,13 +19,13 @@ self.onmessage = ({ data }: MessageEvent<BuildRequest>) => {
   const pack = (raw: RawMesh | null) => {
     if (!raw) return null;
     transferables.push(
-      raw.positions.buffer,
-      raw.normals.buffer,
-      raw.uvs.buffer,
-      raw.colors.buffer,
-      raw.skyLights.buffer,
-      raw.waterTops.buffer,
-      raw.indices.buffer,
+      raw.positions.buffer as ArrayBuffer,
+      raw.normals.buffer   as ArrayBuffer,
+      raw.uvs.buffer       as ArrayBuffer,
+      raw.colors.buffer    as ArrayBuffer,
+      raw.skyLights.buffer as ArrayBuffer,
+      raw.waterTops.buffer as ArrayBuffer,
+      raw.indices.buffer   as ArrayBuffer,
     );
     return raw;
   };
