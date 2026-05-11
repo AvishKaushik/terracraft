@@ -34,6 +34,9 @@ export const api = {
     token: string,
   ) => request('PATCH', '/api/users/me/avatar', colors, token),
 
+  listServers: (token: string) =>
+    request('GET', '/api/servers', undefined, token),
+
   createServer: (name: string, token: string) =>
     request('POST', '/api/servers', { name }, token),
 

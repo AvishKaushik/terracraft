@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { CHUNK_SIZE, WORLD_W, WORLD_H, WORLD_D, ATLAS_COLS, ATLAS_ROWS } from './constants';
 import { BLOCKS } from './blocks';
 import { getBlock, blockIndex } from './terrain';
@@ -65,34 +64,45 @@ interface MeshData {
   uvs: number[];
   colors: number[];
   skyLights: number[];
+  waterTops: number[];
   indices: number[];
   vi: number;
 }
 
 function makeMeshData(): MeshData {
-  return { positions: [], normals: [], uvs: [], colors: [], skyLights: [], indices: [], vi: 0 };
+  return { positions: [], normals: [], uvs: [], colors: [], skyLights: [], waterTops: [], indices: [], vi: 0 };
 }
 
-function dataToGeometry(data: MeshData): THREE.BufferGeometry | null {
+export interface RawMesh {
+  positions:  Float32Array;
+  normals:    Float32Array;
+  uvs:        Float32Array;
+  colors:     Float32Array;
+  skyLights:  Float32Array;
+  waterTops:  Float32Array;
+  indices:    Uint32Array;
+}
+
+function meshDataToRaw(data: MeshData): RawMesh | null {
   if (data.positions.length === 0) return null;
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position',  new THREE.Float32BufferAttribute(data.positions, 3));
-  geom.setAttribute('normal',    new THREE.Float32BufferAttribute(data.normals, 3));
-  geom.setAttribute('uv',        new THREE.Float32BufferAttribute(data.uvs, 2));
-  geom.setAttribute('color',     new THREE.Float32BufferAttribute(data.colors, 3));
-  geom.setAttribute('aSkyLight', new THREE.Float32BufferAttribute(data.skyLights, 1));
-  geom.setIndex(data.indices);
-  return geom;
+  return {
+    positions:  new Float32Array(data.positions),
+    normals:    new Float32Array(data.normals),
+    uvs:        new Float32Array(data.uvs),
+    colors:     new Float32Array(data.colors),
+    skyLights:  new Float32Array(data.skyLights),
+    waterTops:  new Float32Array(data.waterTops),
+    indices:    new Uint32Array(data.indices),
+  };
 }
 
-export function buildChunkGeometry(
+export function buildChunkRaw(
   cx: number,
   cz: number,
   world: Uint8Array,
-  _lightMap: Uint8Array,
   skyLightMap: Uint8Array,
   blockLightMap: Uint8Array,
-): { opaque: THREE.BufferGeometry | null; trans: THREE.BufferGeometry | null } {
+): { opaque: RawMesh | null; trans: RawMesh | null } {
   const opaque = makeMeshData();
   const trans  = makeMeshData();
 
@@ -153,6 +163,8 @@ export function buildChunkGeometry(
           const blockBright = Math.max(MIN_LIGHT, effectiveBlock / 15);
           const skyBright = skyFaceLight / 15;
 
+          const isWaterTop = id === 17 && face.kind === 'top' ? 1 : 0;
+
           for (let i = 0; i < 4; i++) {
             const v = face.verts[i];
             const aoF = face.tint * AO_CURVE[ao[i]];
@@ -162,6 +174,7 @@ export function buildChunkGeometry(
             const b = aoF * blockBright;
             target.colors.push(b, b, b);
             target.skyLights.push(aoF * skyBright);
+            target.waterTops.push(isWaterTop);
           }
 
           const flip = ao[0] + ao[2] < ao[1] + ao[3];
@@ -177,5 +190,5 @@ export function buildChunkGeometry(
     }
   }
 
-  return { opaque: dataToGeometry(opaque), trans: dataToGeometry(trans) };
+  return { opaque: meshDataToRaw(opaque), trans: meshDataToRaw(trans) };
 }

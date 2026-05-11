@@ -10,18 +10,16 @@ import { inBounds } from '../lib/terrain';
 import { useMultiplayerStore } from '../stores/multiplayerStore';
 import {
   GRAVITY, JUMP_VEL, WALK_SPEED, SPRINT_SPEED, FLY_SPEED, SWIM_SPEED,
-  MOUSE_SENS, WORLD_W, WORLD_H, WORLD_D, PLAYER_WIDTH, PLAYER_HEIGHT, EYE_HEIGHT,
+  WORLD_W, WORLD_H, WORLD_D, PLAYER_WIDTH, PLAYER_HEIGHT, EYE_HEIGHT,
 } from '../lib/constants';
-import { type BreakParticlesHandle } from './BreakParticles';
+import { useSettingsStore } from '../stores/settingsStore';
+import { playPlace, playFootstep, playSplash } from '../lib/sounds';
 import { getInterpolated } from '../lib/interpolation';
 import { socket } from '../lib/socket';
 import { waterState } from '../lib/waterState';
+import { useChestStore } from '../stores/chestStore';
 
-interface Props {
-  particlesRef: React.RefObject<BreakParticlesHandle>;
-}
-
-export function PlayerController({ particlesRef }: Props) {
+export function PlayerController() {
   const { camera, gl } = useThree();
   const keys = useRef<Record<string, boolean>>({});
   const lastSpaceTap = useRef(0);
@@ -56,13 +54,13 @@ export function PlayerController({ particlesRef }: Props) {
         return;
       }
       // Open inventory with E
-      if (e.code === 'KeyE' && gs.started && !gs.chatOpen && !gs.inventoryOpen) {
+      if (e.code === 'KeyE' && gs.started && !gs.chatOpen && !gs.inventoryOpen && !gs.chestOpen) {
         e.preventDefault();
         gs.setInventoryOpen(true);
         document.exitPointerLock();
         return;
       }
-      if (gs.chatOpen || gs.inventoryOpen) return;
+      if (gs.chatOpen || gs.inventoryOpen || gs.chestOpen) return;
 
       keys.current[e.code] = true;
       if (e.code.startsWith('Digit')) {
@@ -101,8 +99,9 @@ export function PlayerController({ particlesRef }: Props) {
     const onMove = (e: MouseEvent) => {
       if (document.pointerLockElement !== gl.domElement) return;
       const ps = usePlayerStore.getState();
-      let yaw = ps.yaw - e.movementX * MOUSE_SENS;
-      let pitch = ps.pitch - e.movementY * MOUSE_SENS;
+      const sens = useSettingsStore.getState().sensitivity;
+      let yaw = ps.yaw - e.movementX * sens;
+      let pitch = ps.pitch - e.movementY * sens;
       const limit = Math.PI / 2 - 0.001;
       pitch = Math.max(-limit, Math.min(limit, pitch));
       ps.setYaw(yaw);
@@ -130,15 +129,20 @@ export function PlayerController({ particlesRef }: Props) {
       const ps = usePlayerStore.getState();
       const posVec = new THREE.Vector3(...ps.pos);
 
-      if (e.button === 0) {
-        const hit = raycastBlock(posVec, ps.yaw, ps.pitch, world);
-        if (!hit || hit.y === 0) return;
-        const brokenId = world[(hit.y * WORLD_D + hit.z) * WORLD_W + hit.x];
-        particlesRef.current?.spawn(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5, brokenId);
-        setBlock(hit.x, hit.y, hit.z, 0);
-      } else if (e.button === 2) {
+      if (e.button === 2) {
         const hit = raycastBlock(posVec, ps.yaw, ps.pitch, world);
         if (!hit) return;
+
+        // Right-click on a chest — open chest UI
+        const hitId = world[(hit.y * WORLD_D + hit.z) * WORLD_W + hit.x];
+        if (hitId === 32) {
+          useChestStore.getState().setData([hit.x, hit.y, hit.z], Array(27).fill(0));
+          socket.emit('chest:open', { x: hit.x, y: hit.y, z: hit.z });
+          useGameStore.getState().setChestOpen(true);
+          document.exitPointerLock();
+          return;
+        }
+
         const px = hit.x + hit.face[0];
         const py = hit.y + hit.face[1];
         const pz = hit.z + hit.face[2];
@@ -173,12 +177,12 @@ export function PlayerController({ particlesRef }: Props) {
         const blockId = hotbar[currentSlot];
 
         if (blockId === 15) {
-          // Torch: only allow on top face or side faces (not bottom)
-          if (hit.face[1] === -1) return; // no hanging torches
+          if (hit.face[1] === -1) return;
           setBlock(px, py, pz, blockId, hit.face as [number, number, number]);
         } else {
           setBlock(px, py, pz, blockId);
         }
+        playPlace();
       }
     };
     const onContext = (e: MouseEvent) => e.preventDefault();
@@ -195,15 +199,19 @@ export function PlayerController({ particlesRef }: Props) {
       gl.domElement.removeEventListener('contextmenu', onContext);
       window.removeEventListener('wheel', onWheel);
     };
-  }, [gl.domElement, particlesRef]);
+  }, [gl.domElement]);
 
   // ── Game loop ─────────────────────────────────────────────────────────
-  const fpsAccum   = useRef({ counter: 0, timer: 0 });
-  const moveAccum   = useRef(0);
+  const fpsAccum  = useRef({ counter: 0, timer: 0 });
+  const moveAccum = useRef(0);
+  const stepTimer = useRef(0);
+  const wasInWater = useRef(false);
+  const bobPhase  = useRef(0);
+  const bobDecay  = useRef(0);
 
   useFrame((_state, rawDt) => {
-    const { started, chatOpen, inventoryOpen } = useGameStore.getState();
-    if (!started || chatOpen || inventoryOpen) {
+    const { started, chatOpen, inventoryOpen, settingsOpen, chestOpen } = useGameStore.getState();
+    if (!started || chatOpen || inventoryOpen || settingsOpen || chestOpen) {
       waterState.eyeInWater = false;
       return;
     }
@@ -304,8 +312,33 @@ export function PlayerController({ particlesRef }: Props) {
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
 
+    // Camera bob — smooth in/out via decay factor
+    const bobbing = mvLen > 0 && onGround && !flying && !inWater;
+    bobDecay.current = bobbing
+      ? Math.min(1, bobDecay.current + dt * 10)
+      : Math.max(0, bobDecay.current - dt * 10);
+    if (bobbing) bobPhase.current += dt * (sprint ? 13 : 8.5);
+    const bobAmp = (sprint ? 0.062 : 0.042) * bobDecay.current;
+    camera.position.y += Math.sin(bobPhase.current) * bobAmp;
+
+    // Footsteps
+    if (mvLen > 0 && onGround && !inWater && !flying) {
+      stepTimer.current -= dt;
+      if (stepTimer.current <= 0) {
+        playFootstep();
+        stepTimer.current = sprint ? 0.30 : 0.42;
+      }
+    } else {
+      stepTimer.current = 0;
+    }
+
+    // Water enter/exit splash
+    if (inWater && !wasInWater.current) playSplash();
+    wasInWater.current = inWater;
+
     // FOV — lerp toward target based on movement state
-    const targetFov = flying ? 83 : (sprint && mvLen > 0 && !inWater) ? 78 : 70;
+    const baseFov = useSettingsStore.getState().baseFov;
+    const targetFov = flying ? baseFov + 13 : (sprint && mvLen > 0 && !inWater) ? baseFov + 8 : baseFov;
     const pcam = camera as THREE.PerspectiveCamera;
     if (Math.abs(pcam.fov - targetFov) > 0.05) {
       pcam.fov += (targetFov - pcam.fov) * Math.min(1, 8 * dt);

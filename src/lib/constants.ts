@@ -20,4 +20,4 @@ export const SWIM_SPEED = 2.8;
 
 export const TEX_SIZE = 16;
 export const ATLAS_COLS = 4;
-export const ATLAS_ROWS = 8;
+export const ATLAS_ROWS = 10;

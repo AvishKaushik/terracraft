@@ -21,6 +21,10 @@ export interface TorchEntry {
 
 export interface GlowEntry { x: number; y: number; z: number; }
 
+export interface BlockChange {
+  x: number; y: number; z: number; id: number; face?: [number, number, number];
+}
+
 interface WorldStore {
   world: Uint8Array;
   lightMap: Uint8Array;
@@ -33,6 +37,8 @@ interface WorldStore {
   dirtyChunks: Set<string>;
   setBlock: (x: number, y: number, z: number, id: number, face?: [number, number, number]) => void;
   setBlockSilent: (x: number, y: number, z: number, id: number, face?: [number, number, number]) => void;
+  /** Apply many changes at once — single light recompute at the end. */
+  applyWorldChanges: (changes: BlockChange[]) => void;
   clearDirty: (cx: number, cz: number) => void;
 }
 
@@ -205,6 +211,30 @@ export const useWorldStore = create<WorldStore>((set) => ({
         torches:     needRescan      ? buildTorchList()     : state.torches,
         glowstones:  needGlowRescan  ? buildGlowstoneList() : state.glowstones,
       };
+    });
+  },
+
+  applyWorldChanges(changes) {
+    if (changes.length === 0) return;
+
+    for (const { x, y, z, id, face } of changes) {
+      if (!inBounds(x, y, z)) continue;
+      const idx = blockIndex(x, y, z);
+      world[idx] = id;
+      if (id === 15 && face) torchFaces.set(idx, face);
+      else                   torchFaces.delete(idx);
+    }
+
+    // Single light recompute for the entire batch
+    computeLightMap(world, lightMap, skyLightMap, blockLightMap);
+
+    const allDirty = new Set<string>();
+    markAllDirty(allDirty);
+
+    set({
+      dirtyChunks: allDirty,
+      torches:    buildTorchList(),
+      glowstones: buildGlowstoneList(),
     });
   },
 

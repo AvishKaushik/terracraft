@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { dayNight } from '../lib/dayNight';
 import { waterState } from '../lib/waterState';
 import { animateWater } from '../lib/atlas';
+import { useSettingsStore } from '../stores/settingsStore';
 
 const DAY_CYCLE_SECONDS = 300; // 5-minute full day
 
@@ -121,8 +122,9 @@ export function SceneSetup() {
       (scene.fog as THREE.Fog).near = WATER_FOG_NEAR;
       (scene.fog as THREE.Fog).far  = WATER_FOG_FAR;
     } else {
-      (scene.fog as THREE.Fog).near = 40;
-      (scene.fog as THREE.Fog).far  = 90;
+      const rd = useSettingsStore.getState().renderDistance;
+      (scene.fog as THREE.Fog).near = rd * 0.45;
+      (scene.fog as THREE.Fog).far  = rd;
     }
   });
 

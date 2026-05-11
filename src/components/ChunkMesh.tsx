@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useWorldStore } from '../stores/worldStore';
-import { buildChunkGeometry } from '../lib/mesher';
+import { buildChunkAsync } from '../lib/mesherPool';
+import type { RawMesh } from '../lib/mesher';
 import { atlasTexture } from '../lib/atlas';
 import { dayNight } from '../lib/dayNight';
 
@@ -11,29 +12,46 @@ interface Props { cx: number; cz: number; }
 const vertexShader = /* glsl */`
   attribute vec3 color;
   attribute float aSkyLight;
+  attribute float aIsWaterTop;
+  uniform float uTime;
   varying vec3 vColor;
   varying float vSkyLight;
   varying vec2 vUv;
+  varying float vIsWaterTop;
 
   void main() {
-    vColor    = color;
-    vSkyLight = aSkyLight;
-    vUv       = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vColor       = color;
+    vSkyLight    = aSkyLight;
+    vUv          = uv;
+    vIsWaterTop  = aIsWaterTop;
+
+    vec3 pos = position;
+    if (aIsWaterTop > 0.5) {
+      pos.y -= 0.125;
+      pos.y += sin(uTime * 1.4 + position.x * 1.1 + position.z * 0.9) * 0.045
+             + sin(uTime * 0.8 - position.x * 0.7 + position.z * 1.2) * 0.025;
+    }
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
 `;
 
 const fragmentShader = /* glsl */`
   uniform sampler2D map;
   uniform float uDayFactor;
+  uniform float uTime;
   varying vec3 vColor;
   varying float vSkyLight;
   varying vec2 vUv;
+  varying float vIsWaterTop;
 
   void main() {
-    vec4 tex = texture2D(map, vUv);
+    vec2 uvFinal = vUv;
+    if (vIsWaterTop > 0.5) {
+      uvFinal.x += sin(uTime * 0.6 + vUv.y * 8.0) * 0.002;
+      uvFinal.y += sin(uTime * 0.5 + vUv.x * 8.0) * 0.002;
+    }
+    vec4 tex = texture2D(map, uvFinal);
     if (tex.a < 0.1) discard;
-    // block light is always on; sky light fades to 0 at night
     float brightness = max(vColor.r, vSkyLight * uDayFactor);
     gl_FragColor = vec4(tex.rgb * brightness, tex.a);
   }
@@ -42,8 +60,9 @@ const fragmentShader = /* glsl */`
 function makeChunkMat(transparent: boolean): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
-      map:          { value: atlasTexture },
-      uDayFactor:   { value: 1.0 },
+      map:        { value: atlasTexture },
+      uDayFactor: { value: 1.0 },
+      uTime:      { value: 0.0 },
     },
     vertexShader,
     fragmentShader,
@@ -54,13 +73,25 @@ function makeChunkMat(transparent: boolean): THREE.ShaderMaterial {
   });
 }
 
+function rawToGeometry(raw: RawMesh): THREE.BufferGeometry {
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position',    new THREE.BufferAttribute(raw.positions, 3));
+  geom.setAttribute('normal',      new THREE.BufferAttribute(raw.normals, 3));
+  geom.setAttribute('uv',          new THREE.BufferAttribute(raw.uvs, 2));
+  geom.setAttribute('color',       new THREE.BufferAttribute(raw.colors, 3));
+  geom.setAttribute('aSkyLight',   new THREE.BufferAttribute(raw.skyLights, 1));
+  geom.setAttribute('aIsWaterTop', new THREE.BufferAttribute(raw.waterTops, 1));
+  geom.setIndex(new THREE.BufferAttribute(raw.indices, 1));
+  return geom;
+}
+
 export function ChunkMesh({ cx, cz }: Props) {
   const opaqueRef = useRef<THREE.Mesh>(null!);
   const transRef  = useRef<THREE.Mesh>(null!);
-  const key = `${cx},${cz}`;
+  const key       = `${cx},${cz}`;
+  const genRef    = useRef(0); // generation counter — discard stale results
 
   const world         = useWorldStore(s => s.world);
-  const lightMap      = useWorldStore(s => s.lightMap);
   const skyLightMap   = useWorldStore(s => s.skyLightMap);
   const blockLightMap = useWorldStore(s => s.blockLightMap);
   const dirtyChunks   = useWorldStore(s => s.dirtyChunks);
@@ -69,36 +100,43 @@ export function ChunkMesh({ cx, cz }: Props) {
   const opaqueMat = useMemo(() => makeChunkMat(false), []);
   const transMat  = useMemo(() => makeChunkMat(true),  []);
 
-  function applyGeometry(opaque: THREE.BufferGeometry | null, trans: THREE.BufferGeometry | null) {
+  function applyGeometry(opaque: RawMesh | null, trans: RawMesh | null) {
     const om = opaqueRef.current;
     if (om.geometry) om.geometry.dispose();
-    om.geometry = opaque ?? new THREE.BufferGeometry();
-    om.visible = !!opaque;
+    om.geometry = opaque ? rawToGeometry(opaque) : new THREE.BufferGeometry();
+    om.visible  = !!opaque;
 
     const tm = transRef.current;
     if (tm.geometry) tm.geometry.dispose();
-    tm.geometry = trans ?? new THREE.BufferGeometry();
-    tm.visible = !!trans;
+    tm.geometry = trans ? rawToGeometry(trans) : new THREE.BufferGeometry();
+    tm.visible  = !!trans;
   }
 
-  useFrame(() => {
+  useFrame((_s, dt) => {
     const df = dayNight.factor;
     (opaqueMat.uniforms.uDayFactor as THREE.IUniform).value = df;
     (transMat.uniforms.uDayFactor  as THREE.IUniform).value = df;
+    (transMat.uniforms.uTime       as THREE.IUniform).value += dt;
   });
 
+  // Initial build
   useEffect(() => {
-    const { opaque, trans } = buildChunkGeometry(cx, cz, world, lightMap, skyLightMap, blockLightMap);
-    applyGeometry(opaque, trans);
+    const gen = ++genRef.current;
+    buildChunkAsync(cx, cz, world, skyLightMap, blockLightMap).then(({ opaque, trans }) => {
+      if (genRef.current === gen) applyGeometry(opaque, trans);
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Dirty rebuild
   useEffect(() => {
     if (!dirtyChunks.has(key)) return;
-    const { opaque, trans } = buildChunkGeometry(cx, cz, world, lightMap, skyLightMap, blockLightMap);
-    applyGeometry(opaque, trans);
-    clearDirty(cx, cz);
-  }, [dirtyChunks, key, cx, cz, world, lightMap, skyLightMap, blockLightMap, clearDirty]);
+    clearDirty(cx, cz); // clear immediately to prevent duplicate dispatches
+    const gen = ++genRef.current;
+    buildChunkAsync(cx, cz, world, skyLightMap, blockLightMap).then(({ opaque, trans }) => {
+      if (genRef.current === gen) applyGeometry(opaque, trans);
+    });
+  }, [dirtyChunks, key, cx, cz, world, skyLightMap, blockLightMap, clearDirty]);
 
   return (
     <>

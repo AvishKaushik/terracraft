@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { SceneSetup } from './SceneSetup';
 import { WorldChunks } from './WorldChunks';
 import { BlockHighlight } from './BlockHighlight';
+import { BlockBreaking } from './BlockBreaking';
 import { BreakParticles, type BreakParticlesHandle } from './BreakParticles';
 import { PlayerController } from './PlayerController';
 import { OtherPlayers } from './OtherPlayers';
@@ -25,9 +26,10 @@ function SceneWithMultiplayer({ particlesRef }: { particlesRef: React.RefObject<
       <TorchSprites />
       <GlowSprites />
       <BlockHighlight />
+      <BlockBreaking particlesRef={particlesRef} />
       <OtherPlayers />
       <BreakParticles ref={particlesRef} />
-      <PlayerController particlesRef={particlesRef} />
+      <PlayerController />
       <HeldTorch />
       <HeldArm />
     </>

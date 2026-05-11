@@ -36,46 +36,48 @@ export function AuthScreen() {
       <h1>TERRA&nbsp;CRAFT</h1>
       <div className="pre-subtitle">build · mine · explore</div>
 
-      <div className="pre-tabs">
-        <button
-          className={`pre-tab ${tab === 'login' ? 'active' : ''}`}
-          onClick={() => { setTab('login'); setError(''); }}
-        >Login</button>
-        <button
-          className={`pre-tab ${tab === 'register' ? 'active' : ''}`}
-          onClick={() => { setTab('register'); setError(''); }}
-        >Register</button>
-      </div>
+      <div className="mc-panel">
+        <div className="pre-tabs">
+          <button
+            className={`pre-tab ${tab === 'login' ? 'active' : ''}`}
+            onClick={() => { setTab('login'); setError(''); }}
+          >Login</button>
+          <button
+            className={`pre-tab ${tab === 'register' ? 'active' : ''}`}
+            onClick={() => { setTab('register'); setError(''); }}
+          >Register</button>
+        </div>
 
-      <div className="pre-form">
-        <input
-          className="pre-input"
-          type="text"
-          placeholder="Username"
-          value={username}
-          maxLength={20}
-          autoComplete="username"
-          onChange={e => setUsername(e.target.value)}
-          onKeyDown={onKey}
-        />
-        <input
-          className="pre-input"
-          type="password"
-          placeholder="Password"
-          value={password}
-          maxLength={64}
-          autoComplete={tab === 'register' ? 'new-password' : 'current-password'}
-          onChange={e => setPassword(e.target.value)}
-          onKeyDown={onKey}
-        />
-        {error && <div className="pre-error">{error}</div>}
-        <button
-          className="pre-btn"
-          onClick={submit}
-          disabled={loading || !username.trim() || !password}
-        >
-          {loading ? 'Please wait…' : tab === 'login' ? 'Login' : 'Create Account'}
-        </button>
+        <div className="pre-form">
+          <input
+            className="pre-input"
+            type="text"
+            placeholder="Username"
+            value={username}
+            maxLength={20}
+            autoComplete="username"
+            onChange={e => setUsername(e.target.value)}
+            onKeyDown={onKey}
+          />
+          <input
+            className="pre-input"
+            type="password"
+            placeholder="Password"
+            value={password}
+            maxLength={64}
+            autoComplete={tab === 'register' ? 'new-password' : 'current-password'}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={onKey}
+          />
+          {error && <div className="pre-error">{error}</div>}
+          <button
+            className="pre-btn"
+            onClick={submit}
+            disabled={loading || !username.trim() || !password}
+          >
+            {loading ? 'Please wait…' : tab === 'login' ? 'Login' : 'Create Account'}
+          </button>
+        </div>
       </div>
     </div>
   );

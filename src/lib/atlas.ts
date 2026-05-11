@@ -428,6 +428,80 @@ export function buildAtlas(): THREE.CanvasTexture {
     for (let k = 0; k < 8; k++) px(ctx, x + ((r() * 15) | 0), y + ((r() * 15) | 0), '#e0d060');
   });
 
+  // 30 coal ore — stone base with dark angular coal flecks
+  fill(30, (ctx, x, y) => {
+    noisy(ctx, x, y, [105, 105, 105], 22, 531);
+    const r = rng(541);
+    for (let k = 0; k < 9; k++) {
+      const cx2 = (r() * 13) | 0, cy2 = (r() * 13) | 0;
+      const sz = 1 + ((r() * 2) | 0);
+      ctx.fillStyle = r() > 0.5 ? '#1a1a1a' : '#2e2e2e';
+      ctx.fillRect(x + cx2, y + cy2, sz, sz);
+    }
+  });
+
+  // 31 iron ore — stone base with rusty tan blobs
+  fill(31, (ctx, x, y) => {
+    noisy(ctx, x, y, [105, 105, 105], 22, 551);
+    const r = rng(561);
+    for (let k = 0; k < 9; k++) {
+      const cx2 = (r() * 13) | 0, cy2 = (r() * 13) | 0;
+      const sz = 1 + ((r() * 2) | 0);
+      ctx.fillStyle = r() > 0.5 ? '#c87840' : '#a06030';
+      ctx.fillRect(x + cx2, y + cy2, sz, sz);
+    }
+  });
+
+  // 32 gold ore — stone base with bright golden patches
+  fill(32, (ctx, x, y) => {
+    noisy(ctx, x, y, [105, 105, 105], 22, 571);
+    const r = rng(581);
+    for (let k = 0; k < 8; k++) {
+      const cx2 = (r() * 13) | 0, cy2 = (r() * 13) | 0;
+      const sz = 1 + ((r() * 2) | 0);
+      ctx.fillStyle = r() > 0.5 ? '#e8c020' : '#c0980e';
+      ctx.fillRect(x + cx2, y + cy2, sz, sz);
+    }
+    const r2 = rng(591);
+    for (let k = 0; k < 4; k++) px(ctx, x + ((r2() * 15) | 0), y + ((r2() * 15) | 0), '#ffe060');
+  });
+
+  // 33 diamond ore — stone base with cyan sparkles
+  fill(33, (ctx, x, y) => {
+    noisy(ctx, x, y, [105, 105, 105], 22, 601);
+    const r = rng(611);
+    for (let k = 0; k < 7; k++) {
+      const cx2 = (r() * 13) | 0, cy2 = (r() * 13) | 0;
+      const sz = 1 + ((r() * 2) | 0);
+      ctx.fillStyle = r() > 0.5 ? '#1eb8b8' : '#0e9090';
+      ctx.fillRect(x + cx2, y + cy2, sz, sz);
+    }
+    const r2 = rng(621);
+    for (let k = 0; k < 4; k++) px(ctx, x + ((r2() * 15) | 0), y + ((r2() * 15) | 0), '#a0f8f8');
+  });
+
+  // 34 chest top/bottom — plank base with cross latch
+  fill(34, (ctx, x, y) => {
+    noisy(ctx, x, y, [152, 122, 80], 10, 631);
+    for (let j = 0; j < 16; j += 4) for (let i = 0; i < 16; i++) px(ctx, x + i, y + j, '#5e3e20');
+    // cross latch
+    for (let i = 5; i <= 10; i++) px(ctx, x + i, y + 7, '#3c2410');
+    for (let j = 5; j <= 10; j++) px(ctx, x + 7, y + j, '#3c2410');
+    px(ctx, x + 7, y + 7, '#c8a040'); px(ctx, x + 8, y + 7, '#c8a040');
+    px(ctx, x + 7, y + 8, '#c8a040'); px(ctx, x + 8, y + 8, '#c8a040');
+  });
+
+  // 35 chest side — plank base with rectangular latch border
+  fill(35, (ctx, x, y) => {
+    noisy(ctx, x, y, [152, 122, 80], 10, 641);
+    for (let j = 0; j < 16; j += 4) for (let i = 0; i < 16; i++) px(ctx, x + i, y + j, '#5e3e20');
+    // latch rectangle border
+    for (let i = 5; i <= 10; i++) { px(ctx, x + i, y + 6, '#3c2410'); px(ctx, x + i, y + 10, '#3c2410'); }
+    for (let j = 6; j <= 10; j++) { px(ctx, x + 5, y + j, '#3c2410'); px(ctx, x + 10, y + j, '#3c2410'); }
+    // latch catch (gold)
+    for (let i = 7; i <= 8; i++) for (let j = 7; j <= 9; j++) px(ctx, x + i, y + j, '#c8a040');
+  });
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
