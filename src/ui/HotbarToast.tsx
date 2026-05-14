@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../stores/gameStore';
-import { BLOCKS } from '../lib/blocks';
+import { getAnyName } from '../lib/items';
 
 export function HotbarToast() {
   const currentSlot = useGameStore(s => s.currentSlot);
@@ -14,7 +14,7 @@ export function HotbarToast() {
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
     if (!started) return;
-    const name = BLOCKS[hotbar[currentSlot]]?.name;
+    const name = getAnyName(hotbar[currentSlot]?.id ?? 0);
     if (!name) return;
     setLabel(name);
     setVisible(true);

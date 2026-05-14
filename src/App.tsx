@@ -11,7 +11,15 @@ import { Inventory } from './ui/Inventory';
 import { SettingsScreen } from './ui/SettingsScreen';
 import { PlayerList } from './ui/PlayerList';
 import { HotbarToast } from './ui/HotbarToast';
+import { KillFeed } from './ui/KillFeed';
+import { ScoreboardOverlay } from './ui/ScoreboardOverlay';
+import { EnchantingUI } from './ui/EnchantingUI';
+import { BrewingUI } from './ui/BrewingUI';
 import { ChestUI } from './ui/ChestUI';
+import { DeathScreen } from './ui/DeathScreen';
+import { QuestPanel } from './ui/QuestPanel';
+import { FurnaceUI } from './ui/FurnaceUI';
+import { Minimap } from './components/Minimap';
 import { useGameStore } from './stores/gameStore';
 import { useAuthStore } from './stores/authStore';
 
@@ -50,9 +58,14 @@ export default function App() {
       <Game />
       <div id="night-overlay" />
       <div id="water-overlay" />
+      <div id="rain-overlay" />
       <StartScreen canvasEl={canvasEl} />
       <Inventory />
       <ChestUI />
+      <DeathScreen />
+      <FurnaceUI />
+      <EnchantingUI />
+      <BrewingUI />
       <SettingsScreen />
       {started && (
         <>
@@ -62,6 +75,11 @@ export default function App() {
           <ChatOverlay />
           <PlayerList />
           <HotbarToast />
+          <KillFeed />
+          <ScoreboardOverlay />
+          <QuestPanel />
+          <Minimap />
+          <div id="spawn-toast">Spawn point set!</div>
           <div id="pause-hint" className={!mouseLocked && !chatOpen ? 'show' : ''}>
             Press ESC to pause · T to chat · E for inventory · click to resume
           </div>

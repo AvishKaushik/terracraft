@@ -8,6 +8,7 @@ import { raycastBlock } from '../lib/raycast';
 import { collidesAt, isInWater, isEyeInWater } from '../lib/physics';
 import { inBounds } from '../lib/terrain';
 import { useMultiplayerStore } from '../stores/multiplayerStore';
+import { ITEMS } from '../lib/items';
 import {
   GRAVITY, JUMP_VEL, WALK_SPEED, SPRINT_SPEED, FLY_SPEED, SWIM_SPEED,
   WORLD_W, WORLD_H, WORLD_D, PLAYER_WIDTH, PLAYER_HEIGHT, EYE_HEIGHT,
@@ -18,15 +19,38 @@ import { getInterpolated } from '../lib/interpolation';
 import { socket } from '../lib/socket';
 import { waterState } from '../lib/waterState';
 import { useChestStore } from '../stores/chestStore';
+import { useDroppedItemsStore } from '../stores/droppedItemsStore';
+import { useMobStore, mobTargets } from '../stores/mobStore';
+import { useEffectsStore } from '../stores/effectsStore';
+import { useXpStore } from '../stores/xpStore';
+import { useQuestStore } from '../stores/questStore';
+
+function flashDamage() {
+  const el = document.getElementById('damage-flash');
+  if (el) { el.classList.add('active'); setTimeout(() => el.classList.remove('active'), 350); }
+}
 
 export function PlayerController() {
   const { camera, gl } = useThree();
   const keys = useRef<Record<string, boolean>>({});
   const lastSpaceTap = useRef(0);
 
-  // Working vectors – reused each frame to avoid allocations
   const posRef = useRef(new THREE.Vector3());
   const velRef = useRef(new THREE.Vector3());
+
+  // Accumulators
+  const hungerAccum    = useRef(0);
+  const starvAccum     = useRef(0);
+  const regenAccum     = useRef(0);
+  const bowCharging    = useRef(false);
+  const bowCharge      = useRef(0);
+  const pickupAccum    = useRef(0);
+  const fpsAccum     = useRef({ counter: 0, timer: 0 });
+  const moveAccum    = useRef(0);
+  const stepTimer    = useRef(0);
+  const wasInWater   = useRef(false);
+  const bobPhase     = useRef(0);
+  const bobDecay     = useRef(0);
 
   // ── Initialise player position ──────────────────────────────────────
   useEffect(() => {
@@ -42,25 +66,34 @@ export function PlayerController() {
     usePlayerStore.setState({ pos: [posRef.current.x, posRef.current.y, posRef.current.z] });
   }, []);
 
+  // ── Sync posRef when player respawns (dead: true → false) ──────────
+  useEffect(() => {
+    const unsub = usePlayerStore.subscribe((state, prev) => {
+      if (prev.dead && !state.dead) {
+        posRef.current.set(...state.spawnPos);
+        velRef.current.set(0, 0, 0);
+      }
+    });
+    return unsub;
+  }, []);
+
   // ── Keyboard ─────────────────────────────────────────────────────────
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       const gs = useGameStore.getState();
-      // Open chat with T
       if (e.code === 'KeyT' && gs.started && !gs.chatOpen && !gs.inventoryOpen) {
         e.preventDefault();
         gs.setChatOpen(true);
         document.exitPointerLock();
         return;
       }
-      // Open inventory with E
       if (e.code === 'KeyE' && gs.started && !gs.chatOpen && !gs.inventoryOpen && !gs.chestOpen) {
         e.preventDefault();
         gs.setInventoryOpen(true);
         document.exitPointerLock();
         return;
       }
-      if (gs.chatOpen || gs.inventoryOpen || gs.chestOpen) return;
+      if (gs.chatOpen || gs.inventoryOpen || gs.chestOpen || gs.furnaceOpen) return;
 
       keys.current[e.code] = true;
       if (e.code.startsWith('Digit')) {
@@ -121,7 +154,7 @@ export function PlayerController() {
     return () => document.removeEventListener('pointerlockchange', onChange);
   }, [gl.domElement]);
 
-  // ── Block interaction ─────────────────────────────────────────────────
+  // ── Block / food interaction ──────────────────────────────────────────
   useEffect(() => {
     const onMouseDown = (e: MouseEvent) => {
       if (document.pointerLockElement !== gl.domElement) return;
@@ -130,11 +163,120 @@ export function PlayerController() {
       const posVec = new THREE.Vector3(...ps.pos);
 
       if (e.button === 2) {
+        // Bow charging: right-click with bow + arrows
+        const { currentSlot, hotbar } = useGameStore.getState();
+        const heldId = hotbar[currentSlot]?.id ?? 0;
+        if (heldId === 280) {
+          const hasArrows = hotbar.some(s => s?.id === 281);
+          if (hasArrows) {
+            bowCharging.current = true;
+            bowCharge.current = 0;
+            return;
+          }
+        }
+
+        // Eating / potion: right-click with food/potion in hand
+        const { consumeFromSlot } = useGameStore.getState();
+        const item = heldId >= 256 ? ITEMS[heldId] : null;
+        if (item?.potionEffect) {
+          useEffectsStore.getState().applyPotion(item.potionEffect);
+          if (item.potionEffect === 'healing') {
+            const ps2 = usePlayerStore.getState();
+            ps2.setHealth(Math.min(ps2.maxHealth, ps2.health + 6));
+          }
+          consumeFromSlot(currentSlot);
+          return;
+        }
+        if (item?.foodValue) {
+          const ps2 = usePlayerStore.getState();
+          if (ps2.hunger < ps2.maxHunger) {
+            ps2.setHunger(Math.min(ps2.maxHunger, ps2.hunger + item.foodValue));
+            consumeFromSlot(currentSlot);
+          }
+          return;
+        }
+
+        // Animal breeding: right-click with wheat near a cow
+        if (heldId === 284) {
+          const { pos: pp } = usePlayerStore.getState();
+          let closestId: string | null = null;
+          let closestDist = 3.5;
+          for (const [id, t] of mobTargets) {
+            const mob = useMobStore.getState().mobs.get(id);
+            if (!mob || mob.type !== 'cow') continue;
+            const dx = t.pos[0] - pp[0], dz = t.pos[2] - pp[2];
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist < closestDist) { closestDist = dist; closestId = id; }
+          }
+          if (closestId) {
+            socket.emit('mob:breed', { id: closestId });
+            consumeFromSlot(currentSlot);
+            return;
+          }
+        }
+
+        // Hoe: right-click on grass/dirt → farmland (block 40)
+        if (item?.isTool) {
+          const hit2 = raycastBlock(posVec, ps.yaw, ps.pitch, world);
+          if (hit2) {
+            const hitId2 = world[(hit2.y * WORLD_D + hit2.z) * WORLD_W + hit2.x];
+            if (hitId2 === 1 || hitId2 === 2) { // grass or dirt
+              const { setBlock } = useWorldStore.getState();
+              setBlock(hit2.x, hit2.y, hit2.z, 40);
+              return;
+            }
+          }
+        }
+
+        // Enchanting Table: right-click → open enchanting UI
+        const hit3 = raycastBlock(posVec, ps.yaw, ps.pitch, world);
+        if (hit3) {
+          const hitId3 = world[(hit3.y * WORLD_D + hit3.z) * WORLD_W + hit3.x];
+          if (hitId3 === 43) {
+            useGameStore.getState().setEnchantingOpen(true, [hit3.x, hit3.y, hit3.z]);
+            document.exitPointerLock();
+            return;
+          }
+          if (hitId3 === 44) {
+            useGameStore.getState().setBrewingOpen(true, [hit3.x, hit3.y, hit3.z]);
+            document.exitPointerLock();
+            return;
+          }
+          // TNT: right-click with any item → ignite
+          if (hitId3 === 39) {
+            socket.emit('tnt:ignite', { x: hit3.x, y: hit3.y, z: hit3.z });
+            return;
+          }
+          // Farmland: right-click with seeds → plant wheat (41)
+          if (hitId3 === 40 && heldId === 283) {
+            const { setBlock: sb } = useWorldStore.getState();
+            sb(hit3.x, hit3.y + 1, hit3.z, 41);
+            consumeFromSlot(currentSlot);
+            return;
+          }
+        }
+
         const hit = raycastBlock(posVec, ps.yaw, ps.pitch, world);
         if (!hit) return;
 
-        // Right-click on a chest — open chest UI
         const hitId = world[(hit.y * WORLD_D + hit.z) * WORLD_W + hit.x];
+
+        // Right-click on a bed — set spawn point
+        if (hitId === 33) {
+          usePlayerStore.getState().setSpawnPos([hit.x + 0.5, hit.y + 1, hit.z + 0.5]);
+          const el = document.getElementById('spawn-toast');
+          if (el) { el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2200); }
+          return;
+        }
+
+        // Right-click on a furnace — open furnace UI
+        if (hitId === 34) {
+          useGameStore.getState().setFurnaceOpen(true, [hit.x, hit.y, hit.z]);
+          document.exitPointerLock();
+          return;
+        }
+
+        // Right-click on a chest — open chest UI
         if (hitId === 32) {
           useChestStore.getState().setData([hit.x, hit.y, hit.z], Array(27).fill(0));
           socket.emit('chest:open', { x: hit.x, y: hit.y, z: hit.z });
@@ -157,8 +299,6 @@ export function PlayerController() {
         );
         if (inPlayer) return;
 
-        // Prevent placing inside a remote player's body.
-        // Use getInterpolated — the store pos is stale (only set on join, not on move).
         const { playerIds } = useMultiplayerStore.getState();
         let inRemote = false;
         for (const id of playerIds) {
@@ -173,8 +313,9 @@ export function PlayerController() {
         }
         if (inRemote) return;
 
-        const { currentSlot, hotbar } = useGameStore.getState();
-        const blockId = hotbar[currentSlot];
+        const { currentSlot: cs, hotbar: hb, consumeFromSlot: consume } = useGameStore.getState();
+        const blockId = hb[cs]?.id ?? 0;
+        if (blockId === 0 || blockId >= 256) return; // can't place items
 
         if (blockId === 15) {
           if (hit.face[1] === -1) return;
@@ -182,9 +323,31 @@ export function PlayerController() {
         } else {
           setBlock(px, py, pz, blockId);
         }
+        consume(cs);
+        useQuestStore.getState().reportPlace();
         playPlace();
       }
     };
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 2) return;
+      if (!bowCharging.current) return;
+      bowCharging.current = false;
+      const charge = bowCharge.current;
+      bowCharge.current = 0;
+      if (charge < 0.3) return; // too short draw
+      const ps2 = usePlayerStore.getState();
+      // Consume one arrow
+      const gs2 = useGameStore.getState();
+      const arrowSlot = gs2.hotbar.findIndex(s => s?.id === 281);
+      if (arrowSlot !== -1) gs2.consumeFromSlot(arrowSlot);
+      socket.emit('bow:fire', {
+        from:   ps2.pos,
+        yaw:    ps2.yaw,
+        pitch:  ps2.pitch,
+        charge: Math.min(charge, 1.5),
+      });
+    };
+
     const onContext = (e: MouseEvent) => e.preventDefault();
     const onWheel = (e: WheelEvent) => {
       if (document.pointerLockElement !== gl.domElement) return;
@@ -192,29 +355,27 @@ export function PlayerController() {
       selectSlot(e.deltaY > 0 ? currentSlot + 1 : currentSlot - 1);
     };
     gl.domElement.addEventListener('mousedown', onMouseDown);
+    gl.domElement.addEventListener('mouseup', onMouseUp);
     gl.domElement.addEventListener('contextmenu', onContext);
     window.addEventListener('wheel', onWheel, { passive: true });
     return () => {
       gl.domElement.removeEventListener('mousedown', onMouseDown);
+      gl.domElement.removeEventListener('mouseup', onMouseUp);
       gl.domElement.removeEventListener('contextmenu', onContext);
       window.removeEventListener('wheel', onWheel);
     };
   }, [gl.domElement]);
 
   // ── Game loop ─────────────────────────────────────────────────────────
-  const fpsAccum  = useRef({ counter: 0, timer: 0 });
-  const moveAccum = useRef(0);
-  const stepTimer = useRef(0);
-  const wasInWater = useRef(false);
-  const bobPhase  = useRef(0);
-  const bobDecay  = useRef(0);
-
   useFrame((_state, rawDt) => {
-    const { started, chatOpen, inventoryOpen, settingsOpen, chestOpen } = useGameStore.getState();
-    if (!started || chatOpen || inventoryOpen || settingsOpen || chestOpen) {
+    const { started, chatOpen, inventoryOpen, settingsOpen, chestOpen, furnaceOpen, enchantingOpen, brewingOpen } = useGameStore.getState();
+    if (!started || chatOpen || inventoryOpen || settingsOpen || chestOpen || furnaceOpen || enchantingOpen || brewingOpen) {
       waterState.eyeInWater = false;
       return;
     }
+
+    // Don't tick if dead — DeathScreen is showing
+    if (usePlayerStore.getState().dead) return;
 
     const dt = Math.min(rawDt, 0.1);
     const k = keys.current;
@@ -237,9 +398,10 @@ export function PlayerController() {
     const fwdX = -sinY, fwdZ = -cosY;
     const rgtX =  cosY, rgtZ = -sinY;
     const sprint = k['ShiftLeft'] || k['ShiftRight'];
-    const speed = sprint
+    const speedMult2 = useEffectsStore.getState().speedBoost > 0 ? 1.5 : 1;
+    const speed = (sprint
       ? (flying ? FLY_SPEED * 1.6 : SPRINT_SPEED)
-      : (flying ? FLY_SPEED : WALK_SPEED);
+      : (flying ? FLY_SPEED : WALK_SPEED)) * speedMult2;
     const vx = (fwdX * mvF + rgtX * mvR) * speed;
     const vz = (fwdZ * mvF + rgtZ * mvR) * speed;
 
@@ -251,16 +413,13 @@ export function PlayerController() {
       if (k['ControlLeft'] || k['ControlRight']) vy -= speed;
       vel.set(vx, vy, vz);
     } else if (inWater) {
-      // Swimming: horizontal speed reduced, vertical driven entirely by input or buoyancy
       vel.x = vx / speed * SWIM_SPEED;
       vel.z = vz / speed * SWIM_SPEED;
       if (k['Space']) {
-        // Fully submerged → swim up; eye already above water → jump out
         vel.y = isEyeInWater(pos.x, pos.y, pos.z, world) ? SWIM_SPEED : JUMP_VEL * 0.82;
       } else if (k['ControlLeft'] || k['ControlRight']) {
         vel.y = -SWIM_SPEED * 0.7;
       } else {
-        // No vertical input: weak gravity + damping so the player floats near neutral
         vel.y -= GRAVITY * 0.1 * dt;
         vel.y *= Math.max(0, 1 - 5 * dt);
         if (vel.y < -2) vel.y = -2;
@@ -276,13 +435,14 @@ export function PlayerController() {
       }
     }
 
-    // Underwater state — drives CSS tint overlay and 3D fog in SceneSetup
+    // Underwater state
     const eyeWet = isEyeInWater(pos.x, pos.y, pos.z, world);
     waterState.eyeInWater = eyeWet;
     document.documentElement.style.setProperty('--water-alpha', eyeWet ? '1' : '0');
 
     // --- Axis-by-axis collision ---
     let onGround = false;
+    const preVelY = vel.y; // capture before collision zeroes it
     const dy = vel.y * dt;
     const testY = pos.y + dy;
     if (!collidesAt(pos.x, testY, pos.z, world)) {
@@ -299,12 +459,80 @@ export function PlayerController() {
     const testZ = pos.z + vel.z * dt;
     if (!collidesAt(pos.x, pos.y, testZ, world)) pos.z = testZ; else vel.z = 0;
 
+    // Fall damage disabled
+
+    // Void death
     if (pos.y < -10) {
+      ps.setHealth(0);
+      ps.setDead(true);
       pos.set(WORLD_W / 2 + 0.5, WORLD_H + 1, WORLD_D / 2 + 0.5);
       vel.set(0, 0, 0);
     }
 
     ps.setOnGround(onGround);
+
+    // --- Potion effects tick ---
+    useEffectsStore.getState().tick(dt);
+    const eff = useEffectsStore.getState();
+    // Healing pulse
+    if (eff.healingPulse > 0) {
+      useEffectsStore.setState({ healingPulse: eff.healingPulse - 1 });
+      const ps3 = usePlayerStore.getState();
+      ps3.setHealth(Math.min(ps3.maxHealth, ps3.health + 2));
+    }
+
+    // --- Bow charge tick ---
+    if (bowCharging.current) bowCharge.current += dt;
+
+    // --- Hunger depletion ---
+    if (mvLen > 0 && onGround && !flying && !inWater) {
+      hungerAccum.current += dt * (sprint ? 1.0 : 0.5);
+      if (hungerAccum.current >= 1) {
+        const ps2 = usePlayerStore.getState();
+        ps2.setHunger(Math.max(0, ps2.hunger - 1));
+        hungerAccum.current -= 1;
+      }
+    }
+
+    const ps2 = usePlayerStore.getState();
+
+    // --- Starvation damage ---
+    if (ps2.hunger <= 0 && ps2.health > 1) {
+      starvAccum.current += dt;
+      if (starvAccum.current >= 2) {
+        starvAccum.current -= 2;
+        ps2.setHealth(Math.max(1, ps2.health - 1));
+        flashDamage();
+      }
+    } else {
+      starvAccum.current = 0;
+    }
+
+    // --- Health regen at full hunger ---
+    if (ps2.hunger >= 20 && ps2.health > 0 && ps2.health < 20) {
+      regenAccum.current += dt;
+      if (regenAccum.current >= 2) {
+        ps2.setHealth(ps2.health + 1);
+        regenAccum.current -= 2;
+      }
+    } else {
+      regenAccum.current = 0;
+    }
+
+    // --- Item pickup (check every 0.25s) ---
+    pickupAccum.current += dt;
+    if (pickupAccum.current >= 0.25) {
+      pickupAccum.current = 0;
+      const { clusters } = useDroppedItemsStore.getState();
+      for (const [id, cluster] of clusters) {
+        const dx = cluster.pos[0] - pos.x;
+        const dy = cluster.pos[1] - pos.y;
+        const dz = cluster.pos[2] - pos.z;
+        if (dx * dx + dy * dy + dz * dz < 1.5 * 1.5) {
+          socket.emit('items:pickup', { id });
+        }
+      }
+    }
 
     // --- Camera ---
     camera.position.set(pos.x, pos.y + EYE_HEIGHT, pos.z);
@@ -312,7 +540,7 @@ export function PlayerController() {
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
 
-    // Camera bob — smooth in/out via decay factor
+    // Camera bob
     const bobbing = mvLen > 0 && onGround && !flying && !inWater;
     bobDecay.current = bobbing
       ? Math.min(1, bobDecay.current + dt * 10)
@@ -336,7 +564,7 @@ export function PlayerController() {
     if (inWater && !wasInWater.current) playSplash();
     wasInWater.current = inWater;
 
-    // FOV — lerp toward target based on movement state
+    // FOV
     const baseFov = useSettingsStore.getState().baseFov;
     const targetFov = flying ? baseFov + 13 : (sprint && mvLen > 0 && !inWater) ? baseFov + 8 : baseFov;
     const pcam = camera as THREE.PerspectiveCamera;
@@ -345,17 +573,16 @@ export function PlayerController() {
       pcam.updateProjectionMatrix();
     }
 
-    // --- Sync stores (cheap, only pos array reference changes) ---
     usePlayerStore.setState({ pos: [pos.x, pos.y, pos.z], vel: [vel.x, vel.y, vel.z] });
 
-    // --- Broadcast position at 20 Hz ---
+    // Broadcast position at 20 Hz
     moveAccum.current += dt;
     if (moveAccum.current >= 0.05) {
       moveAccum.current = 0;
       socket.emit('player:move', { pos: [pos.x, pos.y, pos.z], yaw, pitch });
     }
 
-    // --- HUD stats ---
+    // HUD stats + quest position tracking
     const acc = fpsAccum.current;
     acc.counter++;
     acc.timer += dt;
@@ -364,6 +591,8 @@ export function PlayerController() {
       acc.counter = 0; acc.timer = 0;
       const mode = flying ? 'flying' : inWater ? 'swimming' : (onGround ? 'walking' : 'falling');
       useGameStore.getState().setStats(fps, `${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`, mode);
+      const spawnX = WORLD_W / 2, spawnZ = WORLD_D / 2;
+      useQuestStore.getState().reportPos(pos.x, pos.y, pos.z, spawnX, spawnZ);
     }
   });
 

@@ -89,9 +89,9 @@ export function setBlockRaw(world: Uint8Array, x: number, y: number, z: number, 
 
 const SEED = 7;
 
-type Biome = 'desert' | 'tundra' | 'forest' | 'plains';
+export type Biome = 'desert' | 'tundra' | 'forest' | 'plains';
 
-function getBiome(x: number, z: number): Biome {
+export function getBiome(x: number, z: number): Biome {
   const temp     = fbm(x * 0.018, z * 0.018, SEED + 200);
   const moisture = fbm(x * 0.018, z * 0.018, SEED + 400);
   if (temp > 0.62) return 'desert';
@@ -99,6 +99,21 @@ function getBiome(x: number, z: number): Biome {
   if (moisture > 0.55) return 'forest';
   return 'plains';
 }
+
+// ── Village locations ──────────────────────────────────────────────────
+
+export const VILLAGE_SEEDS = [
+  { vx: 24,  vz: 24  },
+  { vx: 80,  vz: 20  },
+  { vx: 160, vz: 30  },
+  { vx: 220, vz: 55  },
+  { vx: 28,  vz: 120 },
+  { vx: 128, vz: 105 },
+  { vx: 210, vz: 125 },
+  { vx: 50,  vz: 195 },
+  { vx: 140, vz: 200 },
+  { vx: 220, vz: 220 },
+] as const;
 
 // ── World generation ────────────────────────────────────────────────────
 
@@ -172,7 +187,7 @@ export function generateWorld(world: Uint8Array): void {
   // Pass 4 — trees (biome-aware density + height)
   const treeRng = rng(101);
   let placed = 0;
-  for (let attempt = 0; attempt < 600 && placed < 80; attempt++) {
+  for (let attempt = 0; attempt < 8000 && placed < 900; attempt++) {
     const tx = ((treeRng() * (WORLD_W - 4)) | 0) + 2;
     const tz = ((treeRng() * (WORLD_D - 4)) | 0) + 2;
     const biome = getBiome(tx, tz);
@@ -205,7 +220,7 @@ export function generateWorld(world: Uint8Array): void {
   }
 
   // Pass 5 — stone outcrops on surface
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 80; i++) {
     const ox = (Math.random() * WORLD_W) | 0;
     const oz = (Math.random() * WORLD_D) | 0;
     let oy = 0;
@@ -218,6 +233,16 @@ export function generateWorld(world: Uint8Array): void {
             setBlockRaw(world, ox + dx, oy + dy, oz + dz, 3);
   }
 
+  // Pass 2.5 — underground lava pools (fill open air at y ≤ 4)
+  for (let x = 1; x < WORLD_W - 1; x++) {
+    for (let z = 1; z < WORLD_D - 1; z++) {
+      for (let y = 2; y <= 4; y++) {
+        if (getBlock(world, x, y, z) === 0)
+          setBlockRaw(world, x, y, z, 38);
+      }
+    }
+  }
+
   // Pass 6 — fill sea-level water
   for (let x = 0; x < WORLD_W; x++) {
     for (let z = 0; z < WORLD_D; z++) {
@@ -227,4 +252,104 @@ export function generateWorld(world: Uint8Array): void {
       }
     }
   }
+
+  // Pass 7 — desert surface decoration (cactus + dead bushes)
+  for (let x = 0; x < WORLD_W; x++) {
+    for (let z = 0; z < WORLD_D; z++) {
+      const biome = getBiome(x, z);
+      if (biome !== 'desert') continue;
+      const sy = surfaceY[z * WORLD_W + x];
+      if (sy <= SEA_LEVEL || getBlock(world, x, sy, z) !== 5) continue;
+      const h = hash2(x, z, SEED + 800);
+      if (h < 0.025) {
+        // Cactus — 1–3 blocks tall, check no adjacent cactus
+        if (getBlock(world, x - 1, sy + 1, z) === 35 || getBlock(world, x + 1, sy + 1, z) === 35 ||
+            getBlock(world, x, sy + 1, z - 1) === 35 || getBlock(world, x, sy + 1, z + 1) === 35) continue;
+        const height = 1 + ((h * 40) | 0) % 3;
+        for (let dy = 1; dy <= height; dy++) setBlockRaw(world, x, sy + dy, z, 35);
+      } else if (h < 0.085) {
+        setBlockRaw(world, x, sy + 1, z, 36); // dead bush
+      }
+    }
+  }
+
+  // Pass 8 — plains/forest flowers
+  for (let x = 0; x < WORLD_W; x++) {
+    for (let z = 0; z < WORLD_D; z++) {
+      const biome = getBiome(x, z);
+      if (biome !== 'plains' && biome !== 'forest') continue;
+      const sy = surfaceY[z * WORLD_W + x];
+      if (sy <= SEA_LEVEL + 1 || getBlock(world, x, sy, z) !== 1) continue;
+      const h = hash2(x, z, SEED + 900);
+      if (h < 0.075) setBlockRaw(world, x, sy + 1, z, 37); // poppy
+    }
+  }
+
+  // Pass 9 — villages (10 cobblestone houses spread across the map)
+  for (const { vx, vz } of VILLAGE_SEEDS) {
+    if (vx + 8 >= WORLD_W || vz + 8 >= WORLD_D) continue;
+    const sy = surfaceY[vz * WORLD_W + vx];
+    if (sy <= SEA_LEVEL + 1 || sy > 28) continue;
+    const gy = sy + 1;
+    // 6×6 footprint cobblestone walls, 4 high
+    for (let dx = 0; dx < 7; dx++) {
+      for (let dz = 0; dz < 7; dz++) {
+        if (dx === 0 || dx === 6 || dz === 0 || dz === 6) {
+          for (let dy = 0; dy < 4; dy++) setBlockRaw(world, vx + dx, gy + dy, vz + dz, 4);
+        }
+      }
+    }
+    // Oak plank roof
+    for (let dx = 0; dx < 7; dx++)
+      for (let dz = 0; dz < 7; dz++)
+        setBlockRaw(world, vx + dx, gy + 4, vz + dz, 7);
+    // Window gaps
+    setBlockRaw(world, vx + 1, gy + 2, vz,     0);
+    setBlockRaw(world, vx + 5, gy + 2, vz + 6, 0);
+    // Door opening
+    setBlockRaw(world, vx + 3, gy,     vz, 0);
+    setBlockRaw(world, vx + 3, gy + 1, vz, 0);
+    // Chest + torches inside
+    setBlockRaw(world, vx + 1, gy,     vz + 1, 32);
+    setBlockRaw(world, vx + 5, gy + 2, vz + 3, 15);
+    setBlockRaw(world, vx + 1, gy + 2, vz + 3, 15);
+    // Enchanting table in some villages
+    if ((vx + vz) % 3 === 0) setBlockRaw(world, vx + 4, gy, vz + 5, 43);
+  }
+
+  // Pass 10 — dungeons (8 underground cobblestone rooms with spawner + chest)
+  const dungeonSeeds = [
+    { dx: 40,  dz: 35  }, { dx: 100, dz: 60  }, { dx: 180, dz: 45  },
+    { dx: 55,  dz: 150 }, { dx: 145, dz: 140 }, { dx: 220, dz: 160 },
+    { dx: 80,  dz: 220 }, { dx: 200, dz: 210 },
+  ];
+  for (const { dx, dz } of dungeonSeeds) {
+    if (dx + 6 >= WORLD_W || dz + 6 >= WORLD_D) continue;
+    const sy = Math.min(10, surfaceY[dz * WORLD_W + dx] - 2);
+    if (sy < 4) continue;
+    const gy = Math.max(4, sy - 4);
+    for (let i = 0; i < 7; i++) {
+      for (let j = 0; j < 7; j++) {
+        if (i === 0 || i === 6 || j === 0 || j === 6) {
+          for (let k = 0; k < 4; k++) setBlockRaw(world, dx + i, gy + k, dz + j, 4);
+        }
+        setBlockRaw(world, dx + i, gy - 1, dz + j, 4); // floor
+        setBlockRaw(world, dx + i, gy + 4, dz + j, 4); // ceiling
+      }
+    }
+    // Hollow interior
+    for (let i = 1; i < 6; i++)
+      for (let j = 1; j < 6; j++)
+        for (let k = 0; k < 4; k++) setBlockRaw(world, dx + i, gy + k, dz + j, 0);
+    // Door
+    setBlockRaw(world, dx + 3, gy,     dz, 0);
+    setBlockRaw(world, dx + 3, gy + 1, dz, 0);
+    // Spawner, chest, torches
+    setBlockRaw(world, dx + 3, gy, dz + 3, 45);
+    setBlockRaw(world, dx + 1, gy, dz + 1, 32);
+    setBlockRaw(world, dx + 1, gy + 2, dz,     15);
+    setBlockRaw(world, dx + 5, gy + 2, dz + 6, 15);
+    setBlockRaw(world, dx + 5, gy + 2, dz,     15);
+  }
 }
+

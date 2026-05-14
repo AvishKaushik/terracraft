@@ -70,8 +70,9 @@ function TorchObject({ entry }: { entry: TorchEntry }) {
     const offX = fx !== 0 ? -fx * 0.3 : 0;
     const offZ = fz !== 0 ? -fz * 0.3 : 0;
     // rotX: fz wall → tilt along X; rotZ: fx wall → tilt along Z
-    const rotX = -fz * WALL_TILT;
-    const rotZ =  fx * WALL_TILT;
+    // Signs: positive rotX tilts top toward +Z; negative rotZ tilts top toward +X
+    const rotX =  fz * WALL_TILT;
+    const rotZ = -fx * WALL_TILT;
     return {
       groupPos: new THREE.Vector3(cx + offX, y + 0.45, cz + offZ),
       groupRot: new THREE.Euler(rotX, 0, rotZ),

@@ -1,37 +1,55 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../stores/gameStore';
-import { BLOCKS } from '../lib/blocks';
-import { renderBlockIcon } from '../lib/blockIcon';
+import { getAnyName } from '../lib/items';
+import { renderAnyIcon } from '../lib/blockIcon';
 import { matchRecipe, RECIPES } from '../lib/recipes';
 
-const ALL_BLOCK_IDS = Object.keys(BLOCKS).map(Number);
-
-function BlockIcon({ blockId, size }: { blockId: number; size: number }) {
+function AnyIcon({ id, size }: { id: number; size: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const existing = el.querySelector('canvas');
     if (existing) el.removeChild(existing);
-    const canvas = renderBlockIcon(blockId);
+    const canvas = renderAnyIcon(id);
     canvas.style.width = `${size}px`;
     canvas.style.height = `${size}px`;
     canvas.style.imageRendering = 'pixelated';
     el.appendChild(canvas);
-  }, [blockId, size]);
+  }, [id, size]);
   return <div ref={ref} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} />;
 }
 
 export function CraftingPanel() {
   const [grid, setGrid] = useState<number[]>(Array(9).fill(0));
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
-  const currentSlot  = useGameStore(s => s.currentSlot);
-  const setHotbarSlot = useGameStore(s => s.setHotbarSlot);
+
+  const hotbar         = useGameStore(s => s.hotbar);
+  const consumeFromSlot = useGameStore(s => s.consumeFromSlot);
+  const addToHotbar    = useGameStore(s => s.addToHotbar);
 
   const output = matchRecipe(grid);
+  const outputName = output ? getAnyName(output) : null;
 
-  function fillCell(cellIdx: number, blockId: number) {
-    setGrid(g => { const n = [...g]; n[cellIdx] = blockId; return n; });
+  // Hotbar items the player actually has (deduplicated by id, with total count)
+  const available = hotbar.reduce<Record<number, number>>((acc, sl) => {
+    if (sl.id !== 0) acc[sl.id] = (acc[sl.id] ?? 0) + sl.count;
+    return acc;
+  }, {});
+
+  // Count how many of each id the crafting grid already uses
+  const usedInGrid = grid.reduce<Record<number, number>>((acc, id) => {
+    if (id !== 0) acc[id] = (acc[id] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  // Whether the player has enough items to actually craft
+  const canCraft = output !== null && Object.entries(usedInGrid).every(
+    ([id, count]) => (available[Number(id)] ?? 0) >= count
+  );
+
+  function fillCell(cellIdx: number, itemId: number) {
+    setGrid(g => { const n = [...g]; n[cellIdx] = itemId; return n; });
     setSelectedCell(null);
   }
 
@@ -40,26 +58,38 @@ export function CraftingPanel() {
   }
 
   function claimOutput() {
-    if (!output) return;
-    setHotbarSlot(currentSlot, output);
+    if (!canCraft) return;
+    // Consume ingredients from hotbar
+    const toConsume = { ...usedInGrid };
+    for (let i = 0; i < hotbar.length; i++) {
+      const sl = hotbar[i];
+      if (!sl || sl.id === 0) continue;
+      const need = toConsume[sl.id] ?? 0;
+      if (need <= 0) continue;
+      const take = Math.min(need, sl.count);
+      consumeFromSlot(i, take);
+      toConsume[sl.id] -= take;
+    }
+    addToHotbar(output!, 1);
     setGrid(Array(9).fill(0));
     setSelectedCell(null);
   }
 
+  const hasAnyItems = Object.keys(available).length > 0;
+
   return (
     <div id="crafting-panel">
-      {/* 3×3 grid + arrow + output */}
       <div id="crafting-area">
         <div id="crafting-grid">
-          {grid.map((blockId, i) => (
+          {grid.map((itemId, i) => (
             <div
               key={i}
               className={`craft-cell${selectedCell === i ? ' selected' : ''}`}
               onClick={() => setSelectedCell(selectedCell === i ? null : i)}
               onContextMenu={e => { e.preventDefault(); clearCell(i); }}
-              title={blockId ? BLOCKS[blockId].name : 'Empty (right-click to clear)'}
+              title={itemId ? getAnyName(itemId) : 'Empty — right-click to clear'}
             >
-              {blockId !== 0 && <BlockIcon blockId={blockId} size={36} />}
+              {itemId !== 0 && <AnyIcon id={itemId} size={36} />}
             </div>
           ))}
         </div>
@@ -68,43 +98,51 @@ export function CraftingPanel() {
 
         <div
           id="crafting-output"
-          className={output ? 'has-output' : ''}
+          className={canCraft ? 'has-output' : ''}
           onClick={claimOutput}
-          title={output ? `Craft ${BLOCKS[output].name} → hotbar slot ${currentSlot + 1}` : 'No matching recipe'}
+          title={canCraft ? `Craft ${outputName}` : output ? 'Missing ingredients' : 'No matching recipe'}
         >
-          {output && <BlockIcon blockId={output} size={42} />}
+          {output && <AnyIcon id={output} size={42} />}
         </div>
       </div>
 
-      {/* Status line */}
       <div id="crafting-status">
-        {output
-          ? `✓ ${BLOCKS[output].name} — click output to add to hotbar slot ${currentSlot + 1}`
-          : selectedCell !== null
-            ? `Slot ${selectedCell + 1} selected — pick a block below`
-            : 'Click a grid slot, then pick an ingredient'}
+        {canCraft
+          ? `Craft ${outputName} — click output`
+          : output
+            ? 'Not enough materials'
+            : selectedCell !== null
+              ? 'Pick an item from your inventory below'
+              : 'Click a grid cell, then pick an item'}
       </div>
 
-      {/* Block palette — visible when a cell is selected */}
+      {/* Ingredient picker — only shows items the player has */}
       {selectedCell !== null && (
         <div id="crafting-palette">
-          <div className="inv-section-label">Ingredients — click to fill slot {selectedCell + 1}</div>
-          <div id="crafting-palette-grid">
-            {ALL_BLOCK_IDS.map(id => (
-              <div
-                key={id}
-                className={`palette-cell${grid[selectedCell] === id ? ' active' : ''}`}
-                onClick={() => fillCell(selectedCell, id)}
-                title={BLOCKS[id].name}
-              >
-                <BlockIcon blockId={id} size={28} />
-              </div>
-            ))}
-          </div>
+          <div className="inv-section-label">Your Items — click to fill cell {selectedCell + 1}</div>
+          {hasAnyItems ? (
+            <div id="crafting-palette-grid">
+              {Object.entries(available).map(([idStr, count]) => {
+                const id = Number(idStr);
+                return (
+                  <div
+                    key={id}
+                    className={`palette-cell${grid[selectedCell] === id ? ' active' : ''}`}
+                    onClick={() => fillCell(selectedCell, id)}
+                    title={`${getAnyName(id)} ×${count}`}
+                  >
+                    <AnyIcon id={id} size={28} />
+                    <div className="palette-count">×{count}</div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div id="crafting-status">You have no items yet — go mine something!</div>
+          )}
         </div>
       )}
 
-      {/* Recipe book */}
       <div id="crafting-recipes">
         <div className="inv-section-label">Known Recipes</div>
         <div id="recipe-list">

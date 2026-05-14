@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { WORLD_W, WORLD_H, WORLD_D, CHUNK_SIZE, CHUNKS_X, CHUNKS_Z } from '../lib/constants';
 import { BLOCKS } from '../lib/blocks';
 import { generateWorld, inBounds, blockIndex } from '../lib/terrain';
-import { computeLightMap } from '../lib/lighting';
+import { computeLightMap, computeLightMapLocal } from '../lib/lighting';
 import { socket } from '../lib/socket';
 
 const world         = new Uint8Array(WORLD_W * WORLD_H * WORLD_D);
@@ -39,6 +39,8 @@ interface WorldStore {
   setBlockSilent: (x: number, y: number, z: number, id: number, face?: [number, number, number]) => void;
   /** Apply many changes at once — single light recompute at the end. */
   applyWorldChanges: (changes: BlockChange[]) => void;
+  /** Apply an explosion — uses local lighting and only dirties affected chunks. */
+  applyExplosion: (changes: BlockChange[], cx: number, cy: number, cz: number) => void;
   clearDirty: (cx: number, cz: number) => void;
 }
 
@@ -133,17 +135,18 @@ export const useWorldStore = create<WorldStore>((set) => ({
       face: id === 15 && face ? face : undefined,
     });
 
-    computeLightMap(world, lightMap, skyLightMap, blockLightMap);
-
     const isLightChange =
       (BLOCKS[id]?.emitLight ?? 0) > 0 || (BLOCKS[oldId]?.emitLight ?? 0) > 0;
+
+    // Incremental recompute — only touches cells within 15 blocks of the change
+    computeLightMapLocal(world, lightMap, skyLightMap, blockLightMap, x, y, z);
 
     set(state => {
       const dirty = new Set(state.dirtyChunks);
       if (isLightChange) markAllDirty(dirty); else markDirtyAt(dirty, x, z);
 
       // Break torches whose supporting block was just removed
-      let needRescan = id === 15 || (id === 0 && oldId !== 0);
+      let needRescan = id === 15 || oldId === 15;
       if (id === 0 && oldId !== 0) {
         for (const { dx, dy, dz, face: sf } of TORCH_SUPPORT) {
           const tx = x + dx, ty = y + dy, tz = z + dz;
@@ -155,10 +158,10 @@ export const useWorldStore = create<WorldStore>((set) => ({
             world[tidx] = 0;
             torchFaces.delete(tidx);
             markDirtyAt(dirty, tx, tz);
+            needRescan = true;
           }
         }
-        computeLightMap(world, lightMap, skyLightMap, blockLightMap);
-        needRescan = true;
+        if (needRescan) computeLightMapLocal(world, lightMap, skyLightMap, blockLightMap, x, y, z);
       }
 
       const needGlowRescan = id === 16 || oldId === 16;
@@ -236,6 +239,26 @@ export const useWorldStore = create<WorldStore>((set) => ({
       torches:    buildTorchList(),
       glowstones: buildGlowstoneList(),
     });
+  },
+
+  applyExplosion(changes, cx, cy, cz) {
+    if (changes.length === 0) return;
+    let hadTorch = false;
+    for (const { x, y, z, id } of changes) {
+      if (!inBounds(x, y, z)) continue;
+      const idx = blockIndex(x, y, z);
+      if (world[idx] === 15) hadTorch = true;
+      world[idx] = id;
+      torchFaces.delete(idx);
+    }
+    computeLightMapLocal(world, lightMap, skyLightMap, blockLightMap, cx, cy, cz);
+    const dirty = new Set<string>();
+    for (const { x, z } of changes) markDirtyAt(dirty, x, z);
+    set(state => ({
+      dirtyChunks: dirty,
+      torches:    hadTorch ? buildTorchList() : state.torches,
+      glowstones: state.glowstones,
+    }));
   },
 
   clearDirty(cx, cz) {

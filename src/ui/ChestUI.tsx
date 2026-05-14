@@ -1,17 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { useGameStore } from '../stores/gameStore';
 import { useChestStore } from '../stores/chestStore';
-import { BLOCKS } from '../lib/blocks';
-import { renderBlockIcon } from '../lib/blockIcon';
+import { getAnyName } from '../lib/items';
+import { renderAnyIcon } from '../lib/blockIcon';
 import { socket } from '../lib/socket';
 
 function SlotCell({
   blockId,
+  count,
   active,
   empty,
   onClick,
 }: {
   blockId: number;
+  count?: number;
   active: boolean;
   empty: boolean;
   onClick: () => void;
@@ -22,16 +24,19 @@ function SlotCell({
     if (!el || empty) return;
     const existing = el.querySelector('canvas');
     if (existing) el.removeChild(existing);
-    el.appendChild(renderBlockIcon(blockId));
+    el.appendChild(renderAnyIcon(blockId));
   }, [blockId, empty]);
 
   return (
     <div
       className={`chest-slot${active ? ' active' : ''}${empty ? ' empty' : ''}`}
       onClick={onClick}
-      title={empty ? 'Empty' : BLOCKS[blockId]?.name ?? ''}
+      title={empty ? 'Empty' : getAnyName(blockId)}
     >
       {!empty && <div ref={iconRef} />}
+      {!empty && count !== undefined && count > 1 && (
+        <div className="slot-count">{count}</div>
+      )}
     </div>
   );
 }
@@ -61,14 +66,13 @@ export function ChestUI() {
 
   function handleChestSlotClick(idx: number) {
     if (!pos) return;
-    const chestItem = slots[idx];
-    const hotbarItem = hotbar[currentSlot];
+    const chestItem = slots[idx];              // number (block/item ID)
+    const hotbarSlot = hotbar[currentSlot];    // HotbarSlot
 
-    // Swap chest slot with current hotbar slot
-    setSlot(idx, hotbarItem);
-    setHotbarSlot(currentSlot, chestItem);
+    setSlot(idx, hotbarSlot.id);
+    setHotbarSlot(currentSlot, chestItem, 1);
 
-    socket.emit('chest:set', { x: pos[0], y: pos[1], z: pos[2], idx, blockId: hotbarItem });
+    socket.emit('chest:set', { x: pos[0], y: pos[1], z: pos[2], idx, blockId: hotbarSlot.id });
   }
 
   return (
@@ -91,12 +95,13 @@ export function ChestUI() {
 
         <div className="inv-section-label">Your hotbar — selected slot is highlighted</div>
         <div id="chest-hotbar">
-          {hotbar.map((blockId, i) => (
+          {hotbar.map((slot, i) => (
             <SlotCell
               key={i}
-              blockId={blockId}
+              blockId={slot.id}
+              count={slot.count}
               active={i === currentSlot}
-              empty={false}
+              empty={slot.id === 0}
               onClick={() => useGameStore.getState().selectSlot(i)}
             />
           ))}

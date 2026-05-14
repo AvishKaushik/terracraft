@@ -94,23 +94,23 @@ export function ChunkMesh({ cx, cz }: Props) {
   const world         = useWorldStore(s => s.world);
   const skyLightMap   = useWorldStore(s => s.skyLightMap);
   const blockLightMap = useWorldStore(s => s.blockLightMap);
-  const dirtyChunks   = useWorldStore(s => s.dirtyChunks);
   const clearDirty    = useWorldStore(s => s.clearDirty);
 
   const opaqueMat = useMemo(() => makeChunkMat(false), []);
   const transMat  = useMemo(() => makeChunkMat(true),  []);
 
-  function applyGeometry(opaque: RawMesh | null, trans: RawMesh | null) {
+  // Stable apply function via ref so subscribe callback never holds a stale closure
+  const applyRef = useRef<(o: RawMesh | null, t: RawMesh | null) => void>(null!);
+  applyRef.current = (opaque, trans) => {
     const om = opaqueRef.current;
     if (om.geometry) om.geometry.dispose();
     om.geometry = opaque ? rawToGeometry(opaque) : new THREE.BufferGeometry();
     om.visible  = !!opaque;
-
     const tm = transRef.current;
     if (tm.geometry) tm.geometry.dispose();
     tm.geometry = trans ? rawToGeometry(trans) : new THREE.BufferGeometry();
     tm.visible  = !!trans;
-  }
+  };
 
   useFrame((_s, dt) => {
     const df = dayNight.factor;
@@ -123,20 +123,26 @@ export function ChunkMesh({ cx, cz }: Props) {
   useEffect(() => {
     const gen = ++genRef.current;
     buildChunkAsync(cx, cz, world, skyLightMap, blockLightMap).then(({ opaque, trans }) => {
-      if (genRef.current === gen) applyGeometry(opaque, trans);
+      if (genRef.current === gen) applyRef.current(opaque, trans);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Dirty rebuild
+  // Subscribe imperatively — avoids re-rendering ALL visible chunks on every block break
   useEffect(() => {
-    if (!dirtyChunks.has(key)) return;
-    clearDirty(cx, cz); // clear immediately to prevent duplicate dispatches
-    const gen = ++genRef.current;
-    buildChunkAsync(cx, cz, world, skyLightMap, blockLightMap).then(({ opaque, trans }) => {
-      if (genRef.current === gen) applyGeometry(opaque, trans);
+    let prevDirty: Set<string> | null = null;
+    return useWorldStore.subscribe((state) => {
+      const dirty = state.dirtyChunks;
+      if (dirty === prevDirty || !dirty.has(key)) { prevDirty = dirty; return; }
+      prevDirty = dirty;
+      clearDirty(cx, cz);
+      const gen = ++genRef.current;
+      buildChunkAsync(cx, cz, world, skyLightMap, blockLightMap).then(({ opaque, trans }) => {
+        if (genRef.current === gen) applyRef.current(opaque, trans);
+      });
     });
-  }, [dirtyChunks, key, cx, cz, world, skyLightMap, blockLightMap, clearDirty]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>

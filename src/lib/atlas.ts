@@ -502,6 +502,158 @@ export function buildAtlas(): THREE.CanvasTexture {
     for (let i = 7; i <= 8; i++) for (let j = 7; j <= 9; j++) px(ctx, x + i, y + j, '#c8a040');
   });
 
+  // 36 cactus — green with dark ribbed edges
+  fill(36, (ctx, x, y) => {
+    noisy(ctx, x, y, [56, 128, 56], 22, 651);
+    const r = rng(661);
+    for (let i = 0; i < 16; i++) {
+      px(ctx, x + i, y,      '#1a4e10');
+      px(ctx, x + i, y + 15, '#1a4e10');
+      px(ctx, x,      y + i, '#1a4e10');
+      px(ctx, x + 15, y + i, '#1a4e10');
+    }
+    for (let j = 4; j < 15; j += 5) {
+      for (let i = 1; i < 15; i++) {
+        if (r() > 0.45) px(ctx, x + i, y + j, '#2a7020');
+      }
+    }
+    for (let k = 0; k < 6; k++) px(ctx, x + ((r() * 14) | 0) + 1, y + ((r() * 14) | 0) + 1, '#80c060');
+  });
+
+  // 37 dead bush — transparent sprite, dry brown sticks
+  fill(37, (ctx, x, y) => {
+    ctx.clearRect(x, y, TEX_SIZE, TEX_SIZE);
+    const stem = '#7a5228'; const branch = '#604018'; const tip = '#966840';
+    for (let j = 8; j < 15; j++) { px(ctx, x + 7, y + j, stem); px(ctx, x + 8, y + j, '#8a5e30'); }
+    for (let i = 3; i <= 6;  i++) px(ctx, x + i, y + 10, branch);
+    for (let i = 9; i <= 12; i++) px(ctx, x + i, y + 10, branch);
+    for (let i = 4; i <= 7;  i++) px(ctx, x + i, y + 7,  '#503410');
+    for (let i = 8; i <= 11; i++) px(ctx, x + i, y + 7,  '#503410');
+    px(ctx, x + 3,  y + 9,  tip); px(ctx, x + 3,  y + 10, tip);
+    px(ctx, x + 12, y + 9,  tip); px(ctx, x + 12, y + 10, tip);
+    px(ctx, x + 4,  y + 6,  tip); px(ctx, x + 11, y + 6,  tip);
+    px(ctx, x + 2,  y + 11, branch); px(ctx, x + 13, y + 11, branch);
+  });
+
+  // 38 poppy — transparent sprite, red petals on green stem
+  fill(38, (ctx, x, y) => {
+    ctx.clearRect(x, y, TEX_SIZE, TEX_SIZE);
+    for (let j = 8; j < 15; j++) { px(ctx, x + 7, y + j, '#286e1c'); px(ctx, x + 8, y + j, '#348228'); }
+    px(ctx, x + 5, y + 11, '#286e1c'); px(ctx, x + 6, y + 10, '#286e1c');
+    px(ctx, x + 9, y + 11, '#348228'); px(ctx, x + 10, y + 10, '#348228');
+    for (let i = 5; i <= 10; i++) for (let j = 3; j <= 8; j++) px(ctx, x + i, y + j, '#c81c1c');
+    for (let i = 6; i <= 9;  i++) for (let j = 4; j <= 7; j++) px(ctx, x + i, y + j, '#e03030');
+    px(ctx, x + 7, y + 5, '#ffee00'); px(ctx, x + 8, y + 5, '#ffee00'); px(ctx, x + 7, y + 6, '#ffee00');
+  });
+
+  // 39 lava — glowing orange-red with dark cracks (row 9 col 3, last old slot)
+  fill(39, (ctx, x, y) => {
+    noisy(ctx, x, y, [218, 76, 18], 32, 671);
+    const r = rng(681);
+    for (let k = 0; k < 22; k++) px(ctx, x + ((r() * 16) | 0), y + ((r() * 16) | 0), '#ff6000');
+    for (let k = 0; k < 10; k++) px(ctx, x + ((r() * 16) | 0), y + ((r() * 16) | 0), '#ffcc00');
+    for (let k = 0; k < 8; k++) {
+      const cx2 = (r() * 14) | 0, cy2 = (r() * 14) | 0;
+      ctx.fillStyle = '#7a1000';
+      ctx.fillRect(x + cx2, y + cy2, 1 + ((r() * 2) | 0), 1);
+    }
+  });
+
+  // ── New block textures (rows 10–11) ──────────────────────────────────────
+
+  // 40 TNT top — red with "TNT" label
+  fill(40, (ctx, x, y) => {
+    noisy(ctx, x, y, [196, 36, 36], 20, 691);
+    for (let i = 2; i <= 13; i++) { px(ctx, x + i, y + 4, '#fff'); px(ctx, x + i, y + 11, '#fff'); }
+    // T
+    for (let i = 2; i <= 6;  i++) px(ctx, x + i, y + 5,  '#fff');
+    px(ctx, x + 4, y + 6, '#fff'); px(ctx, x + 4, y + 7, '#fff'); px(ctx, x + 4, y + 8, '#fff');
+    // N
+    for (let j = 5; j <= 10; j++) { px(ctx, x + 8, y + j, '#fff'); px(ctx, x + 12, y + j, '#fff'); }
+    px(ctx, x + 9, y + 6, '#fff'); px(ctx, x + 10, y + 7, '#fff'); px(ctx, x + 11, y + 8, '#fff');
+  });
+
+  // 41 TNT side — red/white stripes
+  fill(41, (ctx, x, y) => {
+    for (let j = 0; j < 16; j++) {
+      const stripe = Math.floor(j / 2) % 2 === 0;
+      for (let i = 0; i < 16; i++) {
+        const v = (((701 + j) * 1664525 + i * 1013904223) >>> 0) / 4294967295;
+        const base = stripe ? [196, 36, 36] : [240, 230, 230];
+        const c = base.map(b => Math.max(0, Math.min(255, b + (v - 0.5) * 14))) as [number,number,number];
+        px(ctx, x + i, y + j, `rgb(${c[0]|0},${c[1]|0},${c[2]|0})`);
+      }
+    }
+  });
+
+  // 42 farmland — dark tilled earth
+  fill(42, (ctx, x, y) => {
+    noisy(ctx, x, y, [90, 58, 36], 18, 711);
+    const r = rng(721);
+    for (let i = 0; i < 16; i += 3) {
+      for (let j = 0; j < 16; j++) px(ctx, x + i, y + j, '#3e2410');
+    }
+    for (let k = 0; k < 8; k++) px(ctx, x + ((r() * 14) | 0) + 1, y + ((r() * 14) | 0) + 1, '#b08060');
+  });
+
+  // 43 wheat seedling — transparent, tiny green sprout
+  fill(43, (ctx, x, y) => {
+    ctx.clearRect(x, y, TEX_SIZE, TEX_SIZE);
+    for (let j = 10; j < 15; j++) px(ctx, x + 7, y + j, '#3a7a1a');
+    for (let i = 5; i <= 7; i++) px(ctx, x + i, y + 10, '#2e6010');
+    for (let i = 7; i <= 9; i++) px(ctx, x + i, y + 8,  '#3a7a1a');
+    px(ctx, x + 6, y + 12, '#2e6010'); px(ctx, x + 8, y + 12, '#2e6010');
+  });
+
+  // 44 wheat mature — golden stalks with grain tips
+  fill(44, (ctx, x, y) => {
+    ctx.clearRect(x, y, TEX_SIZE, TEX_SIZE);
+    const stalk = '#c8a030'; const grain = '#e8c048'; const leaf = '#5a9020';
+    for (let j = 6; j < 15; j++) { px(ctx, x + 5, y + j, stalk); px(ctx, x + 10, y + j, stalk); }
+    for (let j = 3; j <= 7;  j++) { px(ctx, x + 5, y + j, grain); px(ctx, x + 10, y + j, grain); }
+    for (let i = 4; i <= 6;  i++) px(ctx, x + i, y + 3, grain);
+    for (let i = 9; i <= 11; i++) px(ctx, x + i, y + 3, grain);
+    px(ctx, x + 5, y + 2, grain); px(ctx, x + 10, y + 2, grain);
+    for (let i = 3; i <= 7;  i++) px(ctx, x + i, y + 9,  leaf);
+    for (let i = 8; i <= 12; i++) px(ctx, x + i, y + 11, leaf);
+  });
+
+  // 45 enchanting table top — dark purple with cyan rune highlights
+  fill(45, (ctx, x, y) => {
+    noisy(ctx, x, y, [50, 22, 72], 14, 731);
+    const r = rng(741);
+    for (let k = 0; k < 10; k++) px(ctx, x + ((r() * 14) | 0) + 1, y + ((r() * 14) | 0) + 1, '#8830cc');
+    for (let k = 0; k < 6;  k++) px(ctx, x + ((r() * 14) | 0) + 1, y + ((r() * 14) | 0) + 1, '#30e8e8');
+    // border glow
+    for (let i = 0; i < 16; i++) { px(ctx, x + i, y, '#4a18a0'); px(ctx, x + i, y + 15, '#4a18a0'); }
+    for (let j = 0; j < 16; j++) { px(ctx, x, y + j, '#4a18a0'); px(ctx, x + 15, y + j, '#4a18a0'); }
+  });
+
+  // 46 brewing stand base — stone-grey with glints
+  fill(46, (ctx, x, y) => {
+    noisy(ctx, x, y, [94, 86, 80], 18, 751);
+    const r = rng(761);
+    for (let k = 0; k < 8; k++) px(ctx, x + ((r() * 14) | 0) + 1, y + ((r() * 14) | 0) + 1, '#d0c8c0');
+    for (let i = 5; i <= 10; i++) px(ctx, x + i, y + 7, '#c0b8b0');
+    for (let j = 5; j <= 10; j++) px(ctx, x + 7, y + j, '#c0b8b0');
+  });
+
+  // 47 spawner cage — transparent cage with dark bars
+  fill(47, (ctx, x, y) => {
+    ctx.clearRect(x, y, TEX_SIZE, TEX_SIZE);
+    ctx.fillStyle = 'rgba(20,20,30,0.35)';
+    ctx.fillRect(x, y, TEX_SIZE, TEX_SIZE);
+    const bar = '#2a2a3a';
+    for (let i = 0; i < 16; i++) {
+      px(ctx, x + i, y + 0, bar); px(ctx, x + i, y + 15, bar);
+      px(ctx, x + 0, y + i, bar); px(ctx, x + 15, y + i, bar);
+    }
+    for (let i = 0; i < 16; i += 5) {
+      for (let j = 0; j < 16; j++) px(ctx, x + i, y + j, bar);
+      for (let j = 0; j < 16; j += 5) px(ctx, x + j, y + i, bar);
+    }
+  });
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;

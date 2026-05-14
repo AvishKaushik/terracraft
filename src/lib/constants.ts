@@ -1,8 +1,8 @@
-export const WORLD_W = 64;
-export const WORLD_H = 40;
-export const WORLD_D = 64;
+export const WORLD_W = 256;
+export const WORLD_H = 48;
+export const WORLD_D = 256;
 export const CHUNK_SIZE = 16;
-export const SEA_LEVEL = 12;
+export const SEA_LEVEL = 14;
 export const CHUNKS_X = Math.ceil(WORLD_W / CHUNK_SIZE);
 export const CHUNKS_Z = Math.ceil(WORLD_D / CHUNK_SIZE);
 
@@ -20,4 +20,4 @@ export const SWIM_SPEED = 2.8;
 
 export const TEX_SIZE = 16;
 export const ATLAS_COLS = 4;
-export const ATLAS_ROWS = 10;
+export const ATLAS_ROWS = 12;

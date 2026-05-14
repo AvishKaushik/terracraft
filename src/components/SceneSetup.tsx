@@ -1,8 +1,10 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { dayNight } from '../lib/dayNight';
 import { waterState } from '../lib/waterState';
+import { serverTime } from '../lib/serverTime';
+import { weatherState } from '../lib/weather';
 import { animateWater } from '../lib/atlas';
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -18,8 +20,9 @@ const SKY_SUNRISE = new THREE.Color(0xff6030);
 const SKY_DAY     = new THREE.Color(0x9bd4ff);
 const SKY_SUNSET  = new THREE.Color(0xff4a18);
 
-// Reusable colour object — avoids allocating a new Color every frame
-const _sky = new THREE.Color();
+// Reusable colour objects — avoids allocating new Colors every frame
+const _sky     = new THREE.Color();
+const _rainSky = new THREE.Color();
 
 function lerpColor(a: THREE.Color, b: THREE.Color, t: number): THREE.Color {
   return _sky.lerpColors(a, b, t);
@@ -48,11 +51,20 @@ function dayFactor(t: number): number {
 }
 
 export function SceneSetup() {
-  const { scene } = useThree();
+  const { scene, camera } = useThree();
+
+  // R3F doesn't add the camera to the scene by default.
+  // camera.add() children (HeldArm, HeldTorch) are only rendered when camera is in the scene graph.
+  useEffect(() => {
+    scene.add(camera);
+    return () => { scene.remove(camera); };
+  }, [camera, scene]);
   const sunRef   = useRef<THREE.Mesh>(null!);
   const moonRef  = useRef<THREE.Mesh>(null!);
   const starsRef = useRef<THREE.Points>(null!);
-  const elapsed  = useRef(DAY_CYCLE_SECONDS * 0.5); // start at midday
+  // -1 = waiting for first server time:sync; clock is frozen until server anchors it
+  const elapsed  = useRef(-1);
+  const synced   = useRef(false);
 
   // Star field — 700 points distributed uniformly on a large sphere
   const [starGeom, starMat] = useMemo(() => {
@@ -84,8 +96,18 @@ export function SceneSetup() {
   }
 
   useFrame((_s, dt) => {
-    elapsed.current = (elapsed.current + dt) % DAY_CYCLE_SECONDS;
-    const t  = elapsed.current / DAY_CYCLE_SECONDS;
+    // Apply server time whenever a new sync arrives (initial join + periodic drift correction)
+    if (!serverTime.synced && serverTime.elapsed >= 0) {
+      elapsed.current = serverTime.elapsed;
+      serverTime.synced = true;
+      synced.current   = true;
+    }
+    // Show midday as placeholder until server anchors the clock; don't advance yet
+    const display = elapsed.current >= 0 ? elapsed.current : DAY_CYCLE_SECONDS * 0.5;
+    if (synced.current) {
+      elapsed.current = (elapsed.current + dt) % DAY_CYCLE_SECONDS;
+    }
+    const t  = display / DAY_CYCLE_SECONDS;
     const df = dayFactor(t);
 
     const sky = skyColorAt(t);
@@ -93,19 +115,21 @@ export function SceneSetup() {
     if (scene.fog) (scene.fog as THREE.Fog).color.copy(sky);
 
     const angle = t * Math.PI * 2;
+    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
 
-    // Sun — negate Y so cos(π)=−1 at midday becomes +60 (above map)
-    sunRef.current.position.set(Math.sin(angle) * 60, -Math.cos(angle) * 60, -20);
+    // Sun — follows camera so it's always in the sky regardless of player position
+    sunRef.current.position.set(cx + Math.sin(angle) * 60, cy + (-Math.cos(angle) * 60), cz - 20);
     sunRef.current.visible = df > 0.05;
 
     // Moon — always opposite the sun
     const moonAngle = angle + Math.PI;
-    moonRef.current.position.set(Math.sin(moonAngle) * 60, -Math.cos(moonAngle) * 60, -20);
-    moonRef.current.visible = df < 0.5; // visible during night + twilight
+    moonRef.current.position.set(cx + Math.sin(moonAngle) * 60, cy + (-Math.cos(moonAngle) * 60), cz - 20);
+    moonRef.current.visible = df < 0.5;
 
-    // Stars — fade in as day ends; gentle pulse for a living sky
+    // Stars — follow camera so they surround the player everywhere on the map
+    starsRef.current.position.set(cx, cy, cz);
     const starBase = Math.max(0, 1 - df * 3);
-    starMat.opacity = starBase * (0.88 + Math.sin(elapsed.current * 0.4) * 0.12);
+    starMat.opacity = starBase * (0.88 + Math.sin(display * 0.4) * 0.12);
 
     dayNight.factor = df;
     // Chunk meshes handle their own night darkening via material color in ChunkMesh.
@@ -113,7 +137,7 @@ export function SceneSetup() {
     document.documentElement.style.setProperty('--night-alpha', String((1 - df) * 0.08));
 
     // Animate water atlas tile
-    animateWater(elapsed.current);
+    animateWater(display);
 
     // Underwater fog — override sky colour and compress fog range
     if (waterState.eyeInWater) {
@@ -122,9 +146,18 @@ export function SceneSetup() {
       (scene.fog as THREE.Fog).near = WATER_FOG_NEAR;
       (scene.fog as THREE.Fog).far  = WATER_FOG_FAR;
     } else {
-      const rd = useSettingsStore.getState().renderDistance;
-      (scene.fog as THREE.Fog).near = rd * 0.45;
-      (scene.fog as THREE.Fog).far  = rd;
+      const rd        = useSettingsStore.getState().renderDistance;
+      const isRaining = weatherState.type === 'rain' || weatherState.type === 'thunder';
+      if (isRaining) {
+        _rainSky.copy(_sky).multiplyScalar(0.6);
+        scene.background = _rainSky;
+        (scene.fog as THREE.Fog).color.copy(_rainSky);
+        (scene.fog as THREE.Fog).near = Math.min(rd * 0.3, 10);
+        (scene.fog as THREE.Fog).far  = Math.min(rd * 0.65, 28);
+      } else {
+        (scene.fog as THREE.Fog).near = rd * 0.45;
+        (scene.fog as THREE.Fog).far  = rd;
+      }
     }
   });
 

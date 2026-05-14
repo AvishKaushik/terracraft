@@ -8,7 +8,7 @@ import { SPRINT_SPEED } from '../lib/constants';
 
 const BASE = new THREE.Vector3(0.30, -0.22, -0.44);
 const BASE_ROT_X = -0.40;
-const SWING_DUR  = 0.20; // seconds for a full punch swing
+const SWING_DUR  = 0.20;
 
 export function HeldArm() {
   const { camera } = useThree();
@@ -19,10 +19,10 @@ export function HeldArm() {
   const user          = useAuthStore(s => s.user);
 
   const groupRef  = useRef<THREE.Group | null>(null);
-  const swingRef  = useRef(0);          // counts down from SWING_DUR to 0
-  const sprintRef = useRef(0);          // lerped sprint factor 0–1
+  const swingRef  = useRef(0);
+  const sprintRef = useRef(0);
 
-  // Rebuild arm geometry/colors whenever avatar colors change
+  // Rebuild arm geometry when avatar colors change
   useEffect(() => {
     const skinHex  = new THREE.Color(user?.skinColor  ?? '#f4c07a').getHex();
     const shirtHex = new THREE.Color(user?.shirtColor ?? '#3a5fa0').getHex();
@@ -33,24 +33,21 @@ export function HeldArm() {
         new THREE.MeshBasicMaterial({ color, depthTest: false }),
       );
       m.renderOrder = 995;
+      m.frustumCulled = false;
       return m;
     };
 
     const wrist  = mk(0.14, 0.09, 0.14, skinHex);
-    wrist.position.set(0, 0, 0);
-
     const fore   = mk(0.13, 0.35, 0.13, skinHex);
     fore.position.set(0, -0.22, 0.02);
-
     const sleeve = mk(0.155, 0.24, 0.155, shirtHex);
     sleeve.position.set(0, -0.505, 0.045);
 
-    // Dispose old group if it exists
     if (groupRef.current) {
       groupRef.current.children.forEach(c => {
         const m = c as THREE.Mesh;
-        m.geometry.dispose();
-        (m.material as THREE.Material).dispose();
+        m.geometry?.dispose();
+        (m.material as THREE.Material)?.dispose();
       });
       camera.remove(groupRef.current);
     }
@@ -74,7 +71,7 @@ export function HeldArm() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.skinColor, user?.shirtColor]);
 
-  // Show/hide arm based on game state
+  // Show/hide
   useEffect(() => {
     if (!groupRef.current) return;
     groupRef.current.visible = started && mouseLocked && !chatOpen && !inventoryOpen;
@@ -83,9 +80,7 @@ export function HeldArm() {
   // Swing on left click
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (e.button === 0 && document.pointerLockElement) {
-        swingRef.current = SWING_DUR;
-      }
+      if (e.button === 0 && document.pointerLockElement) swingRef.current = SWING_DUR;
     };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
@@ -100,24 +95,19 @@ export function HeldArm() {
     const hSpeed  = Math.hypot(vel[0], vel[2]);
     const walkAmt = Math.min(hSpeed / 5, 1);
 
-    // Idle breathing
-    const idleBob = Math.sin(t * 1.6) * 0.003;
-
-    // Walk bob + swing
-    const phase    = t * 7.5;
-    const walkBob  = Math.abs(Math.sin(phase)) * -0.014 * walkAmt;
+    const idleBob   = Math.sin(t * 1.6) * 0.003;
+    const phase     = t * 7.5;
+    const walkBob   = Math.abs(Math.sin(phase)) * -0.014 * walkAmt;
     const walkSwing = Math.sin(phase) * 0.10 * walkAmt;
     const walkPush  = Math.sin(phase) * 0.016 * walkAmt;
 
-    // Sprint lean — lerp smoothly in/out
     const sprintTarget = hSpeed > SPRINT_SPEED * 0.75 ? 1 : 0;
     sprintRef.current += (sprintTarget - sprintRef.current) * Math.min(1, 9 * dt);
     const sl = sprintRef.current;
 
-    // Punch swing — bell curve over SWING_DUR
     if (swingRef.current > 0) swingRef.current = Math.max(0, swingRef.current - dt);
     const swingProgress = swingRef.current > 0 ? (SWING_DUR - swingRef.current) / SWING_DUR : 0;
-    const swingT = Math.sin(swingProgress * Math.PI); // 0→1→0 bell curve
+    const swingT = Math.sin(swingProgress * Math.PI);
 
     g.position.x = BASE.x;
     g.position.y = BASE.y + idleBob + walkBob - swingT * 0.055 - sl * 0.02;

@@ -7,12 +7,14 @@ import { BlockBreaking } from './BlockBreaking';
 import { BreakParticles, type BreakParticlesHandle } from './BreakParticles';
 import { PlayerController } from './PlayerController';
 import { OtherPlayers } from './OtherPlayers';
+import { Mobs } from './Mobs';
 import { TorchSprites } from './TorchSprites';
 import { GlowSprites } from './GlowSprites';
-import { HeldTorch } from './HeldTorch';
-import { HeldArm } from './HeldArm';
+import { Arrows } from './Arrows';
 import { Clouds } from './Clouds';
 import { LeafParticles } from './LeafParticles';
+import { Weather } from './Weather';
+import { DroppedItems } from './DroppedItems';
 import { useMultiplayer } from '../hooks/useMultiplayer';
 
 function SceneWithMultiplayer({ particlesRef }: { particlesRef: React.RefObject<BreakParticlesHandle> }) {
@@ -22,16 +24,18 @@ function SceneWithMultiplayer({ particlesRef }: { particlesRef: React.RefObject<
       <SceneSetup />
       <Clouds />
       <LeafParticles />
+      <Weather />
       <WorldChunks />
       <TorchSprites />
       <GlowSprites />
       <BlockHighlight />
       <BlockBreaking particlesRef={particlesRef} />
       <OtherPlayers />
+      <Mobs />
+      <DroppedItems />
+      <Arrows />
       <BreakParticles ref={particlesRef} />
       <PlayerController />
-      <HeldTorch />
-      <HeldArm />
     </>
   );
 }

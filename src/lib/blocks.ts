@@ -41,7 +41,22 @@ export const BLOCKS: Record<number, BlockDef> = {
   30: { name: 'Gold Ore',          tex: { all: 32 },                       hardness: 2.0  },
   31: { name: 'Diamond Ore',       tex: { all: 33 },                       hardness: 3.0  },
   32: { name: 'Chest',             tex: { top: 34, side: 35, bottom: 34 }, hardness: 2.5  },
+  33: { name: 'Bed',               tex: { top: 24, side: 8,  bottom: 8  }, hardness: 0.2  },
+  34: { name: 'Furnace',           tex: { top: 3,  side: 30, bottom: 3  }, hardness: 3.5  },
+  35: { name: 'Cactus',            tex: { all: 36 },                        hardness: 0.4  },
+  36: { name: 'Dead Bush',         tex: { all: 37 }, sprite: true,          hardness: 0    },
+  37: { name: 'Poppy',             tex: { all: 38 }, sprite: true,          hardness: 0    },
+  38: { name: 'Lava',              tex: { all: 39 }, emitLight: 10, liquid: true, hardness: 999 },
+  // ── New blocks ─────────────────────────────────────────────────────
+  39: { name: 'TNT',               tex: { top: 40, side: 41, bottom: 40 }, hardness: 0    },
+  40: { name: 'Farmland',          tex: { all: 42 },                        hardness: 0.5  },
+  41: { name: 'Wheat',             tex: { all: 43 }, sprite: true, transparent: true, hardness: 0 },
+  42: { name: 'Wheat (Ripe)',      tex: { all: 44 }, sprite: true, transparent: true, hardness: 0 },
+  43: { name: 'Enchanting Table',  tex: { top: 45, side: 3,  bottom: 3  }, hardness: 5.0  },
+  44: { name: 'Brewing Stand',     tex: { all: 46 },                        hardness: 2.5  },
+  45: { name: 'Spawner',           tex: { all: 47 }, transparent: true,     hardness: 999  },
 };
 
 export const DEFAULT_HOTBAR = [1, 3, 5, 7, 9, 10, 15, 18, 21];
 export const HOTBAR = DEFAULT_HOTBAR;
+export const BLOCK_DEFS = BLOCKS;

@@ -44,6 +44,7 @@ export function HeldTorch() {
     stick.rotation.set(0.22, 0.15, -0.12);
     stick.position.set(0, -0.01, 0);
     stick.renderOrder = 999;
+    stick.frustumCulled = false;
 
     // Flame
     const flameGeo = new THREE.SphereGeometry(0.021, 7, 7);
@@ -52,6 +53,7 @@ export function HeldTorch() {
     flame.rotation.set(0.18, 0, -0.10);
     flame.position.set(-0.012, 0.135, 0);
     flame.renderOrder = 999;
+    flame.frustumCulled = false;
     flameRef.current = flame;
 
     // Bright inner core
@@ -60,6 +62,7 @@ export function HeldTorch() {
     const core = new THREE.Mesh(coreGeo, coreMat);
     core.position.set(-0.012, 0.137, 0);
     core.renderOrder = 999;
+    core.frustumCulled = false;
 
     // Glow halo
     const glowTex = buildGlowTex();
@@ -99,7 +102,7 @@ export function HeldTorch() {
   // Toggle visibility whenever game state changes
   useEffect(() => {
     if (!groupRef.current) return;
-    const isTorch = hotbar[currentSlot] === 15;
+    const isTorch = hotbar[currentSlot]?.id === 15;
     groupRef.current.visible = isTorch && started && mouseLocked && !chatOpen && !inventoryOpen;
   }, [hotbar, currentSlot, started, chatOpen, inventoryOpen, mouseLocked]);
 
