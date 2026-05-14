@@ -32,7 +32,6 @@ function flashDamage() {
 export function PlayerController() {
   const { camera, gl } = useThree();
   const keys = useRef<Record<string, boolean>>({});
-  const lastSpaceTap = useRef(0);
 
   const posRef = useRef(new THREE.Vector3());
   const velRef = useRef(new THREE.Vector3());
@@ -99,24 +98,15 @@ export function PlayerController() {
         const n = parseInt(e.code.slice(5));
         if (n >= 1 && n <= 9) useGameStore.getState().selectSlot(n - 1);
       }
-      if (e.code === 'Space') {
-        const now = performance.now();
-        if (now - lastSpaceTap.current < 280) {
-          const { world } = useWorldStore.getState();
-          const pos = posRef.current;
-          const swimming = isInWater(pos.x, pos.y, pos.z, world);
-          if (!swimming) {
-            const cur = usePlayerStore.getState().flying;
-            usePlayerStore.getState().setFlying(!cur);
-            velRef.current.y = 0;
-          }
+      if (e.code === 'KeyG' && keys.current['Space']) {
+        const { world } = useWorldStore.getState();
+        const pos = posRef.current;
+        const swimming = isInWater(pos.x, pos.y, pos.z, world);
+        if (!swimming) {
+          const cur = usePlayerStore.getState().flying;
+          usePlayerStore.getState().setFlying(!cur);
+          velRef.current.y = 0;
         }
-        lastSpaceTap.current = now;
-      }
-      if (e.code === 'KeyF') {
-        const cur = usePlayerStore.getState().flying;
-        usePlayerStore.getState().setFlying(!cur);
-        velRef.current.y = 0;
       }
       if (e.code === 'Escape') document.exitPointerLock();
     };
