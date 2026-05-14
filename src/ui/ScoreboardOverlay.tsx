@@ -13,7 +13,7 @@ export function ScoreboardOverlay() {
   const players        = useMultiplayerStore(s => s.players);
   const playerIds      = useMultiplayerStore(s => s.playerIds);
   const me             = useAuthStore(s => s.user);
-  const myName         = useAuthStore(s => s.username);
+  const myName         = useAuthStore(s => s.user?.username);
   const ownKills       = useKillFeedStore(s => s.entries.filter(e => e.own).length);
 
   useEffect(() => {

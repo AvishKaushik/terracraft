@@ -196,7 +196,7 @@ export function useMultiplayer() {
     });
 
     socket.on('killfeed:pvp', ({ killerName, victimName }: { killerName: string; victimName: string }) => {
-      const myName = useAuthStore.getState().username ?? '';
+      const myName = useAuthStore.getState().user?.username ?? '';
       const own = killerName === myName;
       useKillFeedStore.getState().push(`${killerName} killed ${victimName}`, own);
     });

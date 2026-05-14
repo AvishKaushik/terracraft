@@ -22,7 +22,6 @@ import { useChestStore } from '../stores/chestStore';
 import { useDroppedItemsStore } from '../stores/droppedItemsStore';
 import { useMobStore, mobTargets } from '../stores/mobStore';
 import { useEffectsStore } from '../stores/effectsStore';
-import { useXpStore } from '../stores/xpStore';
 import { useQuestStore } from '../stores/questStore';
 
 function flashDamage() {
@@ -442,7 +441,6 @@ export function PlayerController() {
 
     // --- Axis-by-axis collision ---
     let onGround = false;
-    const preVelY = vel.y; // capture before collision zeroes it
     const dy = vel.y * dt;
     const testY = pos.y + dy;
     if (!collidesAt(pos.x, testY, pos.z, world)) {
