@@ -50,7 +50,7 @@ interface QuestStore {
   claimCompleted: () => void;
 }
 
-export const useQuestStore = create<QuestStore>()(persist((set, get) => ({
+export const useQuestStore = create<QuestStore>()(persist((set) => ({
   quests: INITIAL_QUESTS,
   panelOpen: false,
   lastCompleted: null,

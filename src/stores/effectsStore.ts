@@ -8,7 +8,7 @@ interface EffectsStore {
   applyPotion: (type: 'healing' | 'speed' | 'strength') => void;
 }
 
-export const useEffectsStore = create<EffectsStore>((set, get) => ({
+export const useEffectsStore = create<EffectsStore>((set) => ({
   speedBoost: 0,
   strengthBoost: 0,
   healingPulse: 0,

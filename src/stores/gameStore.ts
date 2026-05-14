@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { DEFAULT_HOTBAR } from '../lib/blocks';
 import { ITEMS } from '../lib/items';
 
 export type Enchants = Partial<{ Sharpness: number; Efficiency: number; Protection: number }>;
